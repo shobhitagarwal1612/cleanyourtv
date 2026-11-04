@@ -22,18 +22,29 @@ public class ClockActivity extends Activity {
     private ChillView chillView;
     private ChillAudio chillAudio;
     private boolean consumeVolumeKeys;
+    private boolean idleBlackout;
 
     @Override
     @SuppressWarnings("deprecation")
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.dream_clock);
-        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         Config cfg = Config.load(this);
         consumeVolumeKeys = cfg.consumeVolumeKeys;
-        ClockFormat.apply(getWindow().getDecorView(), cfg.clockFormat);
+        idleBlackout = getIntent() != null && getIntent().getBooleanExtra("idle_blackout", false);
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE);
+        if (idleBlackout) {
+            View black = new View(this);
+            black.setBackgroundColor(0xFF000000);
+            setContentView(black);
+            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.screenBrightness = 0.0f;
+            getWindow().setAttributes(lp);
+            return;
+        }
+        setContentView(R.layout.dream_clock);
+        ClockFormat.apply(getWindow().getDecorView(), cfg.clockFormat);
         android.view.ViewGroup root = (android.view.ViewGroup) ((android.view.ViewGroup) findViewById(android.R.id.content)).getChildAt(0);
         chillAudio = new ChillAudio(this);
         chillView = new ChillView(this, chillAudio.isRadioAvailable());
@@ -52,6 +63,7 @@ public class ClockActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (idleBlackout) return;
         scene.start();
         chillView.start();
         chillAudio.start(chillView.getMood());
@@ -59,15 +71,23 @@ public class ClockActivity extends Activity {
 
     @Override
     protected void onPause() {
-        chillAudio.stop();
-        chillView.stop();
-        scene.stop();
+        if (!idleBlackout) {
+            chillAudio.stop();
+            chillView.stop();
+            scene.stop();
+        }
         super.onPause();
         finish();   // never left behind in the back stack
     }
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (idleBlackout) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                finish();
+            }
+            return true;
+        }
         int code = event.getKeyCode();
         if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN
                 || code == KeyEvent.KEYCODE_VOLUME_MUTE) {

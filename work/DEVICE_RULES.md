@@ -19,6 +19,15 @@
 - **Netflix & Prime Video Buttons**:
   - Handled natively by `com.xiaomi.android.tvsetup.partnercustomizer` (keep this package enabled).
 
+## 3. Never Trigger Sleep via `Settings.Secure.sleep_timeout` (`GO_TO_SLEEP_REASON_TIMEOUT`)
+- **Invariant**:
+  - **NEVER** lower `Settings.Secure.sleep_timeout` (e.g., to `10000`) to force the TV to sleep. Keep `sleep_timeout` at `10800000` (3 hours) and `screensaver_enabled` at `1`.
+- **Root Cause**:
+  - The Xiaomi Mi TV remote is a **Bluetooth LE (BLE) remote** (`Xiaomi RC`). When the user presses the remote's physical Power button (`KEYCODE_POWER`), Xiaomi's `PhoneWindowManager` invokes `mitv.service` (`TvService`) and `com.droidlogic.ble` to program the Bluetooth controller's BLE wake-up filter before entering standby.
+  - When AOSP `PowerManagerService` instead expires `Settings.Secure.sleep_timeout` (`GO_TO_SLEEP_REASON_TIMEOUT`), it bypasses Xiaomi's `KEYCODE_POWER` standby hook and powers down the SoC/Bluetooth without arming BLE wake-on-radio—making the remote's Power button completely unresponsive until the physical button on the TV chassis is pressed.
+- **Safe Idle Screen-Off (`idle_blackout`)**:
+  - After `home_idle_clock_minutes` (4 minutes) on Home, [`MainActivity.sleepOrIdleClock()`](file:///Users/ashobhit/.gemini/jetski/scratch/cleanyourtv/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java#L1331-L1334) launches [`ClockActivity`](file:///Users/ashobhit/.gemini/jetski/scratch/cleanyourtv/launcher/app/src/main/java/com/gathin/tvhome/ClockActivity.java#L29-L44) with `"idle_blackout": true` (`#000000` pure black view, `screenBrightness = 0.0f`, `FLAG_KEEP_SCREEN_ON`, zero audio/animation). Any remote key wakes Home in `<16 ms`, and pressing the remote's Power button still uses Xiaomi's proper BLE-wakeable standby path.
+
 ## 3. Pushing Files & Installing APKs Over ADB on `dangalFHD`
 - **Issue**: Direct large binary `adb push` over the Python ADB client (`tools/tv.py --push`) can intermittently stall on `dangalFHD`'s `adbd` TCP socket when payloads exceed ~100 KB.
 - **Rule**: Always push APKs and large files using [`tools/b64push.py`](file:///Users/ashobhit/.gemini/jetski/scratch/cleanyourtv/tools/b64push.py) via the repo virtualenv, followed by `pm install -r`:

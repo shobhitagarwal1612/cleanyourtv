@@ -1329,37 +1329,26 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void sleepOrIdleClock() {
-        if (checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS)
-                == PackageManager.PERMISSION_GRANTED) {
-            try {
-                android.content.SharedPreferences sp = getSharedPreferences("idle_sleep", MODE_PRIVATE);
-                if (!sp.getBoolean("active", false)) {
-                    int curSleep = Settings.Secure.getInt(getContentResolver(), "sleep_timeout", 10800000);
-                    if (curSleep <= 15000) curSleep = 10800000;
-                    int curSaver = Settings.Secure.getInt(getContentResolver(), "screensaver_enabled", 0);
-                    sp.edit().putBoolean("active", true)
-                            .putInt("prev_sleep", curSleep)
-                            .putInt("prev_saver", curSaver)
-                            .apply();
-                }
-                Settings.Secure.putInt(getContentResolver(), "screensaver_enabled", 0);
-                Settings.Secure.putInt(getContentResolver(), "sleep_timeout", 10000);
-                return;
-            } catch (RuntimeException ignored) {
-            }
-        }
-        startActivity(new Intent(this, ClockActivity.class));
+        restoreSleepTimeout();
+        startActivity(new Intent(this, ClockActivity.class).putExtra("idle_blackout", true));
     }
 
     private void restoreSleepTimeout() {
-        android.content.SharedPreferences sp = getSharedPreferences("idle_sleep", MODE_PRIVATE);
-        if (!sp.getBoolean("active", false)) return;
-        int prevSleep = sp.getInt("prev_sleep", 10800000);
-        int prevSaver = sp.getInt("prev_saver", 0);
-        sp.edit().putBoolean("active", false).apply();
+        if (checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS)
+                != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
         try {
-            Settings.Secure.putInt(getContentResolver(), "sleep_timeout", prevSleep);
-            Settings.Secure.putInt(getContentResolver(), "screensaver_enabled", prevSaver);
+            android.content.SharedPreferences sp = getSharedPreferences("idle_sleep", MODE_PRIVATE);
+            int curSleep = Settings.Secure.getInt(getContentResolver(), "sleep_timeout", 10800000);
+            if (sp.getBoolean("active", false) || curSleep <= 60000) {
+                int prevSleep = sp.getInt("prev_sleep", 10800000);
+                if (prevSleep <= 60000) prevSleep = 10800000;
+                int prevSaver = sp.getInt("prev_saver", 1);
+                sp.edit().putBoolean("active", false).apply();
+                Settings.Secure.putInt(getContentResolver(), "sleep_timeout", prevSleep);
+                Settings.Secure.putInt(getContentResolver(), "screensaver_enabled", prevSaver);
+            }
         } catch (RuntimeException ignored) {
         }
     }
