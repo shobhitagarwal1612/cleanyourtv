@@ -1335,7 +1335,38 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void sleepOrIdleClock() {
         restoreSleepTimeout();
+        if (tryXiaomiSystemSleep()) return;
         startActivity(new Intent(this, ClockActivity.class).putExtra("idle_blackout", true));
+    }
+
+    /**
+     * On Xiaomi Mi TV (dangalFHD / mitv.service), Settings.Secure.sleep_timeout triggers
+     * GO_TO_SLEEP_REASON_TIMEOUT (2), which fails to prepare the Bluetooth remote wake path.
+     * Calling mitv.internal.ITvService.postSystemSleepDelayed(0) (Binder transaction 72 on "TvService")
+     * sets mstar.str.suspending=1 and invokes IPowerManager.goToSleep(..., GO_TO_SLEEP_REASON_POWER_BUTTON=4),
+     * entering true <0.5W hardware STR standby where the remote Power button wakes the TV in ~2s.
+     */
+    private boolean tryXiaomiSystemSleep() {
+        try {
+            Class<?> sm = Class.forName("android.os.ServiceManager");
+            android.os.IBinder binder = (android.os.IBinder) sm.getMethod("getService", String.class)
+                    .invoke(null, "TvService");
+            if (binder == null) return false;
+            android.os.Parcel data = android.os.Parcel.obtain();
+            android.os.Parcel reply = android.os.Parcel.obtain();
+            try {
+                data.writeInterfaceToken("mitv.internal.ITvService");
+                data.writeLong(0L);
+                if (!binder.transact(72, data, reply, 0)) return false;
+                reply.readException();
+                return true;
+            } finally {
+                reply.recycle();
+                data.recycle();
+            }
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private void restoreSleepTimeout() {
