@@ -53,3 +53,14 @@
 - **Cautious Merge Audit & TV Push Assessment**:
   - When merging `main` into `xiaomi-mitv-customizations`, always audit overlapping files (`git diff <before>..<after> -- launcher/ addons/ work/`) line-by-line so upstream changes never silently overwrite custom logic.
   - Always assess and state clearly whether the newly merged/committed changes require rebuilding and deploying an APK to the TV.
+
+## 6. Frosted-Glass Menus, Dialogs & Focus Contrast Standards
+- **Never Use Stock `AlertDialog.Builder`**:
+  - Always use custom frosted-glass dialogs (`Dialog` inflating `R.layout.popup_inputs` with `@drawable/glass_panel` and `R.layout.item_input` rows, transparent window background, and `0.55f–0.60f` backdrop dim) in `MainActivity` and `LauncherSettingsActivity`.
+- **Clear Background Focus Rings**:
+  - Before calling `dialog.show()` on any modal dialog over `MainActivity` or `LauncherSettingsActivity`, clear focus on the underlying view (`prevFocus.clearFocus()`) and restore it (`prevFocus.requestFocus()`) in `dialog.setOnDismissListener(...)`.
+- **Focus vs. Selection Contrast**:
+  - Use solid white (`#F5FFFFFF`) with dark ink (`@drawable/pill_text` `#FF111111` for titles and `@drawable/pill_text_dim` `#D9111111` for right-aligned status labels) for `state_focused`, and emerald-tinted glass (`#334ADE80` fill, `#CC4ADE80` stroke) for `state_selected` segmented pills (`settings_choice_bg.xml`).
+- **Unified Top-Bar Settings Gear**:
+  - Single-clicking `btnSettings` on Home opens the frosted-glass `showSettingsMenu()` dropdown (`Launcher settings`, `TV system settings`, `Picture & sound`, `Edit dock`, `Reorder apps`, `Module cards`) with vector icons.
+

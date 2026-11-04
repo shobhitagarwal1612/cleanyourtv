@@ -1,23 +1,32 @@
 package com.gathin.tvhome;
 
 import android.app.Activity;
-import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.util.TypedValue;
 import android.view.View;
-import android.widget.TextView;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /** Remote-friendly settings owned by the launcher; system settings stay one row away. */
 public final class LauncherSettingsActivity extends Activity {
@@ -47,6 +56,11 @@ public final class LauncherSettingsActivity extends Activity {
     private String clockFormat;
     private boolean animations;
     private boolean advancedEffects;
+    private int idleMinutes;
+
+    private interface IntPickListener {
+        void onPick(int index);
+    }
 
     @Override
     protected void onCreate(Bundle state) {
@@ -66,6 +80,7 @@ public final class LauncherSettingsActivity extends Activity {
         clockFormat = config.clockFormat;
         animations = config.animations;
         advancedEffects = config.animations && config.advancedEffects;
+        idleMinutes = config.homeIdleClockMinutes;
 
         int[] ids = {R.id.columns4, R.id.columns5, R.id.columns6, R.id.columns7};
         for (int i = 0; i < ids.length; i++) {
@@ -138,16 +153,8 @@ public final class LauncherSettingsActivity extends Activity {
         });
         advancedChoice = findViewById(R.id.advancedChoice);
         advancedChoice.setOnClickListener(v -> {
-            if (advancedEffects) {
-                setAdvanced(false);
-            } else {
-                new AlertDialog.Builder(this)
-                        .setTitle(R.string.advanced_effects)
-                        .setMessage(R.string.advanced_effects_warning)
-                        .setPositiveButton(R.string.enable, (dialog, which) -> setAdvanced(true))
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show();
-            }
+            if (!animations) return;
+            setAdvanced(!advancedEffects);
         });
         dailyWhisperChoice = findViewById(R.id.dailyWhisperChoice);
         dailyWhisperChoice.setOnClickListener(v -> showDailyWhisperPicker());
@@ -175,6 +182,7 @@ public final class LauncherSettingsActivity extends Activity {
             clockFormat = current.clockFormat;
             animations = current.animations;
             advancedEffects = current.animations && current.advancedEffects;
+            idleMinutes = current.homeIdleClockMinutes;
             changed();
             refresh();
         });
@@ -183,8 +191,7 @@ public final class LauncherSettingsActivity extends Activity {
         findViewById(R.id.tvSettingsChoice).setOnClickListener(v ->
                 open(SystemSettings.intent(this, Settings.ACTION_SETTINGS)));
         refresh();
-        if (config.launcherSettingsButton) reorderChoice.requestFocus();
-        else columnChoices[Math.max(0, Math.min(columns - 4, 3))].requestFocus();
+        wallpaperChoice.requestFocus();
     }
 
     private void reverseRow(TextView[] views) {
@@ -193,40 +200,151 @@ public final class LauncherSettingsActivity extends Activity {
         for (int i = views.length - 1; i >= 0; i--) row.addView(views[i]);
     }
 
+    static String prettyWallpaperName(File dir, String filename) {
+        if (filename == null || filename.isEmpty()) return "";
+        if (dir != null) {
+            Map<String, String> captions = WallpaperCaptions.read(new File(dir, "wallpapers"));
+            String caption = captions.get(filename);
+            if (caption != null && !caption.isEmpty()) return caption;
+        }
+        String base = filename;
+        int dot = base.lastIndexOf('.');
+        if (dot > 0) base = base.substring(0, dot);
+        base = base.replaceFirst("^[0-9]+[-_\\s]*", "");
+        String[] parts = base.split("[-_\\s]+");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(part.substring(0, 1).toUpperCase(Locale.US));
+            if (part.length() > 1) sb.append(part.substring(1));
+        }
+        return sb.length() > 0 ? sb.toString() : filename;
+    }
+
+    private void showGlassSingleChoiceDialog(String title, String subtitle, String[] labels,
+                                             String[] statuses, int checked, IntPickListener listener) {
+        float density = getResources().getDisplayMetrics().density;
+        LinearLayout panel = (LinearLayout) getLayoutInflater().inflate(R.layout.popup_inputs, null, false);
+        int pad = Math.round(14 * density);
+        panel.setPadding(pad, Math.round(14 * density), pad, Math.round(12 * density));
+        LinearLayout rows = panel.findViewById(R.id.rows);
+
+        TextView header = new TextView(this);
+        header.setText(title);
+        header.setTextColor(0xFFFFFFFF);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f);
+        header.setPadding(Math.round(12 * density), Math.round(4 * density), Math.round(12 * density), Math.round(2 * density));
+        rows.addView(header);
+
+        if (subtitle != null && !subtitle.isEmpty()) {
+            TextView sub = new TextView(this);
+            sub.setText(subtitle);
+            sub.setTextColor(0x99FFFFFF);
+            sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+            sub.setPadding(Math.round(12 * density), 0, Math.round(12 * density), Math.round(10 * density));
+            rows.addView(sub);
+        }
+
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout listContainer = rows;
+        if (labels.length > 6) {
+            ScrollView scroll = new ScrollView(this);
+            LinearLayout inner = new LinearLayout(this);
+            inner.setOrientation(LinearLayout.VERTICAL);
+            scroll.addView(inner);
+            rows.addView(scroll, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, Math.round(320 * density)));
+            listContainer = inner;
+        }
+
+        View[] itemRows = new View[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            final int index = i;
+            View row = getLayoutInflater().inflate(R.layout.item_input, listContainer, false);
+            row.findViewById(R.id.icon).setVisibility(View.GONE);
+            row.findViewById(R.id.dot).setVisibility(i == checked ? View.VISIBLE : View.GONE);
+            ((TextView) row.findViewById(R.id.title)).setText(labels[i]);
+            TextView status = row.findViewById(R.id.status);
+            String st = statuses != null && i < statuses.length ? statuses[i] : null;
+            if (st != null && !st.isEmpty()) {
+                status.setText(st);
+                status.setVisibility(View.VISIBLE);
+            } else {
+                status.setVisibility(View.GONE);
+            }
+            row.setOnClickListener(v -> {
+                dialog.dismiss();
+                listener.onPick(index);
+            });
+            itemRows[i] = row;
+            listContainer.addView(row);
+        }
+
+        final View prevFocus = getCurrentFocus();
+        if (prevFocus != null) prevFocus.clearFocus();
+        dialog.setContentView(panel);
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.setOnDismissListener(d -> {
+            if (prevFocus != null) prevFocus.requestFocus();
+        });
+        Window w = dialog.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setLayout(Math.round(400 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
+            w.setDimAmount(0.6f);
+        }
+        dialog.show();
+        int focusIdx = checked >= 0 && checked < itemRows.length ? checked : 0;
+        if (itemRows.length > 0) itemRows[focusIdx].requestFocus();
+    }
+
     private void showWallpaperPicker() {
         File dir = Config.dir(this);
-        List<File> images = new java.util.ArrayList<>(WallpaperRotation.images(
+        List<File> images = new ArrayList<>(WallpaperRotation.images(
                 dir == null ? null : new File(dir, "wallpapers")));
         // A theme with a single wallpaper.jpg offers that picture too (Config maps the choice back to it).
         File single = dir == null ? null : new File(dir, Config.WALLPAPER_NAME);
         if (single != null && single.isFile()) images.add(0, single);
-        String[] labels = new String[images.size() + 1];
-        for (int i = 0; i < images.size(); i++) labels[i] = images.get(i).getName();
-        labels[images.size()] = getString(R.string.wallpaper_none);
+
+        String[] labels = new String[images.size() + 2];
+        String[] statuses = new String[images.size() + 2];
+        labels[0] = getString(R.string.wallpaper_theme_default);
+        statuses[0] = images.size() > 1 ? "Time-of-day" : "";
+        for (int i = 0; i < images.size(); i++) {
+            labels[i + 1] = prettyWallpaperName(dir, images.get(i).getName());
+            statuses[i + 1] = "";
+        }
+        labels[images.size() + 1] = getString(R.string.wallpaper_none);
+        statuses[images.size() + 1] = "Solid colour";
+
         String current = choices.getString(Config.WALLPAPER_CHOICE_KEY, null);
-        int checked = "none".equals(current) ? images.size()
-                : indexOf(images, current);
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.wallpaper_label)
-                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
-                    dialog.dismiss();
-                    if (which == images.size()) {
+        int checked = 0;
+        if ("none".equals(current)) {
+            checked = images.size() + 1;
+        } else if (current != null) {
+            int idx = indexOf(images, current);
+            if (idx >= 0) checked = idx + 1;
+        }
+
+        showGlassSingleChoiceDialog(
+                getString(R.string.wallpaper_label),
+                "Choose a fixed background or follow time-of-day rotation",
+                labels, statuses, checked, which -> {
+                    if (which == 0) {
+                        choices.edit().remove(Config.WALLPAPER_CHOICE_KEY).apply();
+                    } else if (which == images.size() + 1) {
                         choices.edit().putString(Config.WALLPAPER_CHOICE_KEY, "none").apply();
                     } else {
                         choices.edit().putString(Config.WALLPAPER_CHOICE_KEY,
-                                images.get(which).getName()).apply();
+                                images.get(which - 1).getName()).apply();
+                        Toast.makeText(this, R.string.wallpaper_applied, Toast.LENGTH_SHORT).show();
                     }
                     changed();
-                    Toast.makeText(this, R.string.wallpaper_applied, Toast.LENGTH_SHORT).show();
                     refresh();
-                })
-                .setNeutralButton(R.string.wallpaper_theme_default, (dialog, which) -> {
-                    choices.edit().remove(Config.WALLPAPER_CHOICE_KEY).apply();
-                    changed();
-                    refresh();
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                });
     }
 
     private static final String[] WHISPER_CAT_KEYS = {
@@ -237,26 +355,85 @@ public final class LauncherSettingsActivity extends Activity {
     };
 
     private void showDailyWhisperPicker() {
-        String[] labels = {
+        float density = getResources().getDisplayMetrics().density;
+        String[] titles = {
                 "Weather & AQI Alerts",
                 "Festivals & Sky Events",
                 "Top Daily Headline",
                 "Daily Thought"
         };
-        boolean[] checked = new boolean[WHISPER_CAT_KEYS.length];
+        int[] icons = {
+                R.drawable.ic_weather,
+                R.drawable.ic_room_mode,
+                R.drawable.ic_news,
+                R.drawable.ic_quote
+        };
+
+        LinearLayout panel = (LinearLayout) getLayoutInflater().inflate(R.layout.popup_inputs, null, false);
+        int pad = Math.round(14 * density);
+        panel.setPadding(pad, Math.round(14 * density), pad, Math.round(12 * density));
+        LinearLayout rows = panel.findViewById(R.id.rows);
+
+        TextView header = new TextView(this);
+        header.setText(R.string.daily_whisper_label);
+        header.setTextColor(0xFFFFFFFF);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f);
+        header.setPadding(Math.round(12 * density), Math.round(4 * density), Math.round(12 * density), Math.round(2 * density));
+        rows.addView(header);
+
+        TextView sub = new TextView(this);
+        sub.setText("Press OK to toggle each category on or off");
+        sub.setTextColor(0x99FFFFFF);
+        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        sub.setPadding(Math.round(12 * density), 0, Math.round(12 * density), Math.round(10 * density));
+        rows.addView(sub);
+
+        final View[] itemRows = new View[WHISPER_CAT_KEYS.length];
+        Runnable syncStates = () -> {
+            for (int i = 0; i < WHISPER_CAT_KEYS.length; i++) {
+                boolean on = Config.isWhisperCategoryEnabled(choices, WHISPER_CAT_KEYS[i]);
+                View r = itemRows[i];
+                r.findViewById(R.id.dot).setVisibility(on ? View.VISIBLE : View.GONE);
+                TextView status = r.findViewById(R.id.status);
+                status.setVisibility(View.VISIBLE);
+                status.setText(on ? R.string.on : R.string.off);
+            }
+        };
+
         for (int i = 0; i < WHISPER_CAT_KEYS.length; i++) {
-            checked[i] = Config.isWhisperCategoryEnabled(choices, WHISPER_CAT_KEYS[i]);
+            final String key = WHISPER_CAT_KEYS[i];
+            View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
+            ((ImageView) row.findViewById(R.id.icon)).setImageResource(icons[i]);
+            ((TextView) row.findViewById(R.id.title)).setText(titles[i]);
+            row.setOnClickListener(v -> {
+                boolean next = !Config.isWhisperCategoryEnabled(choices, key);
+                choices.edit().putBoolean(key, next).apply();
+                changed();
+                syncStates.run();
+                refresh();
+            });
+            itemRows[i] = row;
+            rows.addView(row);
         }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.daily_whisper_label)
-                .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> {
-                    checked[which] = isChecked;
-                    choices.edit().putBoolean(WHISPER_CAT_KEYS[which], isChecked).apply();
-                    changed();
-                    refresh();
-                })
-                .setPositiveButton(android.R.string.ok, null)
-                .show();
+        syncStates.run();
+
+        final View prevFocus = getCurrentFocus();
+        if (prevFocus != null) prevFocus.clearFocus();
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(panel);
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.setOnDismissListener(d -> {
+            if (prevFocus != null) prevFocus.requestFocus();
+        });
+        Window w = dialog.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setLayout(Math.round(380 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
+            w.setDimAmount(0.6f);
+        }
+        dialog.show();
+        itemRows[0].requestFocus();
     }
 
     private String dailyWhisperLabel() {
@@ -279,11 +456,18 @@ public final class LauncherSettingsActivity extends Activity {
 
     private void showIdleActionPicker() {
         String[] labels = {
-                getString(R.string.idle_action_power_off),
-                getString(R.string.idle_action_standby),
-                getString(R.string.idle_action_chill_mode),
-                getString(R.string.idle_action_blackout),
-                getString(R.string.idle_action_off)
+                getString(R.string.idle_action_power_off_short),
+                getString(R.string.idle_action_standby_short),
+                getString(R.string.idle_action_chill_mode_short),
+                getString(R.string.idle_action_blackout_short),
+                getString(R.string.off)
+        };
+        String[] statuses = {
+                "Cold boot on wake",
+                "2s instant wake",
+                "Ambient screensaver",
+                "Instant any-key wake",
+                "Never auto-sleep"
         };
         String current = choices.getString(Config.IDLE_ACTION_KEY, Config.IDLE_ACTION_DEFAULT);
         int checked = 0;
@@ -293,16 +477,15 @@ public final class LauncherSettingsActivity extends Activity {
                 break;
             }
         }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.idle_action_label)
-                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
-                    dialog.dismiss();
+        int mins = Math.max(1, idleMinutes);
+        showGlassSingleChoiceDialog(
+                "When Home is idle (" + mins + " min)",
+                "Automatic power or ambient action when Home is untouched",
+                labels, statuses, checked, which -> {
                     choices.edit().putString(Config.IDLE_ACTION_KEY, IDLE_ACTION_VALUES[which]).apply();
                     changed();
                     refresh();
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                });
     }
 
     private String idleActionLabel() {
@@ -343,19 +526,16 @@ public final class LauncherSettingsActivity extends Activity {
             labels[i + 1] = apps.get(i)[0];
             if (apps.get(i)[1].equals(current)) checked = i + 1;
         }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.open_on_start_label)
-                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
-                    dialog.dismiss();
+        showGlassSingleChoiceDialog(
+                getString(R.string.open_on_start_label),
+                null, labels, null, checked, which -> {
                     if (which == 0) choices.edit().remove(OpenOnStart.KEY).apply();
                     else {
                         OpenOnStart.skipThisBoot(this);
                         choices.edit().putString(OpenOnStart.KEY, apps.get(which - 1)[1]).apply();
                     }
                     refresh();
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                });
     }
 
     /** The picked app's name, its package when it is gone, or Off. */
@@ -417,12 +597,15 @@ public final class LauncherSettingsActivity extends Activity {
         String wallpaperCurrent = choices.getString(Config.WALLPAPER_CHOICE_KEY, null);
         wallpaperChoice.setText(getString(R.string.wallpaper_state,
                 "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
-                        : wallpaperCurrent != null ? wallpaperCurrent
+                        : wallpaperCurrent != null ? prettyWallpaperName(Config.dir(this), wallpaperCurrent)
                         : getString(R.string.wallpaper_theme_default)));
         dailyWhisperChoice.setText(getString(R.string.daily_whisper_state, dailyWhisperLabel()));
-        idleActionChoice.setText(getString(R.string.idle_action_state, idleActionLabel()));
+        idleActionChoice.setText(getString(R.string.idle_action_state, idleActionLabel())
+                .replace("(10 min)", "(" + Math.max(1, idleMinutes) + " min)"));
         openOnStartChoice.setText(getString(R.string.open_on_start_state, openOnStartLabel()));
-        followThemeChoice.setSelected(!hasOnTvChoices());
+        boolean hasChoices = hasOnTvChoices();
+        followThemeChoice.setSelected(false);
+        followThemeChoice.setAlpha(hasChoices ? 1f : 0.55f);
     }
 
     private boolean hasOnTvChoices() {

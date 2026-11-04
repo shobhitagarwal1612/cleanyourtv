@@ -853,7 +853,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnSettings.setOnClickListener(v -> {
             if (launcherSettingsButton) startActivityForResult(
                     new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
-            else open(systemIntent(Settings.ACTION_SETTINGS));
+            else showSettingsMenu();
         });
         btnReorder = findViewById(R.id.btnReorder);
         btnReorder.setOnClickListener(v -> toggleReorder());
@@ -3491,10 +3491,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 "Daily Thought"
         };
         final int[] icons = {
+                R.drawable.ic_weather,
                 R.drawable.ic_room_mode,
-                R.drawable.ic_room_mode,
-                R.drawable.ic_input,
-                R.drawable.ic_home_settings
+                R.drawable.ic_news,
+                R.drawable.ic_quote
         };
 
         LinearLayout panel = (LinearLayout) getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
@@ -3526,7 +3526,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 dot.setVisibility(on ? View.VISIBLE : View.GONE);
                 status.setVisibility(View.VISIBLE);
                 status.setText(on ? R.string.on : R.string.off);
-                status.setAlpha(on ? 1f : 0.55f);
             }
         };
 
@@ -3549,6 +3548,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         syncStates.run();
 
+        if (racePanel != null) racePanel.clearFocus();
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setContentView(panel);
@@ -4450,30 +4450,37 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         rows.getChildAt(0).requestFocus();
     }
 
-    /** The header opens launcher settings directly; hold OK keeps the extra home actions available. */
+    /** The header gear opens a unified glass menu; hold OK opens it too. */
     private void showSettingsMenu() {
         View anchor = findViewById(R.id.btnSettings);
         View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
         LinearLayout rows = panel.findViewById(R.id.rows);
-        PopupWindow popup = glassPopup(panel, (int) (200 * density));
-        if (!launcherSettingsButton) addSettingsMenuRow(rows, popup, R.string.launcher_settings, () -> startActivityForResult(
-                new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
+        PopupWindow popup = glassPopup(panel, (int) (230 * density));
+        if (!launcherSettingsButton) {
+            addSettingsMenuRow(rows, popup, R.drawable.ic_home_settings, R.string.launcher_settings, () -> startActivityForResult(
+                    new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
+        }
+        addSettingsMenuRow(rows, popup, R.drawable.ic_settings, R.string.tv_settings,
+                () -> open(systemIntent(Settings.ACTION_SETTINGS)));
         // Firmware that ships its own settings app next to the AOSP one (Xiaomi China is one): the
         // vendor app holds pages the AOSP settings has no row for, such as Account & Security with
         // the ADB switch. Offered here only while one of them is installed.
         if (SystemSettings.vendorIntent(this) != null) {
-            addSettingsMenuRow(rows, popup, R.string.native_settings, () -> {
+            addSettingsMenuRow(rows, popup, R.drawable.ic_picture, R.string.native_settings, () -> {
                 Intent vendor = SystemSettings.vendorIntent(this);
                 if (vendor != null) open(vendor);
             });
         }
-        if (moduleCards) addSettingsMenuRow(rows, popup, R.string.module_cards, this::showModuleCards);
-        if (dockRow) addSettingsMenuRow(rows, popup, R.string.dock_edit, this::startDockEdit);
-        addSettingsMenuRow(rows, popup, R.string.reorder, this::toggleReorder);
+        addSeparator(rows);
+        if (dockRow) addSettingsMenuRow(rows, popup, R.drawable.ic_apps, R.string.dock_edit, this::startDockEdit);
+        addSettingsMenuRow(rows, popup, R.drawable.ic_swap_vert, R.string.reorder, this::toggleReorder);
+        if (moduleCards) addSettingsMenuRow(rows, popup, R.drawable.ic_apps_pill, R.string.module_cards, this::showModuleCards);
         // A launcher may not restart the TV itself; the Home key helper can open the system power menu instead.
-        if (HomeKeyService.canOpenPowerMenu()) addSettingsMenuRow(rows, popup, R.string.power_menu, HomeKeyService::openPowerMenu);
+        if (HomeKeyService.canOpenPowerMenu()) {
+            addSettingsMenuRow(rows, popup, R.drawable.ic_settings, R.string.power_menu, HomeKeyService::openPowerMenu);
+        }
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        popup.setWidth(Math.max((int) (200 * density), panel.getMeasuredWidth()));
+        popup.setWidth(Math.max((int) (230 * density), panel.getMeasuredWidth()));
         // Hebrew puts Settings at the left of the header: grow the menu inward from it.
         dropIn(popup, panel, anchor, getResources().getBoolean(R.bool.rtl_menu_bar)
                 ? Gravity.START : Gravity.END);
@@ -4625,8 +4632,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void addSettingsMenuRow(LinearLayout rows, PopupWindow popup, int title, Runnable action) {
+        addSettingsMenuRow(rows, popup, 0, title, action);
+    }
+
+    private void addSettingsMenuRow(LinearLayout rows, PopupWindow popup, int iconRes, int title, Runnable action) {
         View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
-        row.findViewById(R.id.icon).setVisibility(View.GONE);
+        ImageView icon = row.findViewById(R.id.icon);
+        if (iconRes != 0) {
+            icon.setImageResource(iconRes);
+            icon.setVisibility(View.VISIBLE);
+        } else {
+            icon.setVisibility(View.GONE);
+        }
         row.findViewById(R.id.dot).setVisibility(View.GONE);
         row.findViewById(R.id.status).setVisibility(View.GONE);
         ((TextView) row.findViewById(R.id.title)).setText(title);
