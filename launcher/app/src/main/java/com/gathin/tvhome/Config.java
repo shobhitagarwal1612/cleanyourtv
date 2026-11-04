@@ -51,6 +51,12 @@ final class Config {
     static final String IDLE_ACTION_BLACKOUT = "blackout";
     static final String IDLE_ACTION_OFF = "off";
     static final String IDLE_ACTION_DEFAULT = IDLE_ACTION_POWER_OFF;
+    static final String DAILY_WHISPER_KEY = "daily_whisper_mode";
+    static final String WHISPER_ALL = "all";
+    static final String WHISPER_NO_NEWS = "no_news";
+    static final String WHISPER_OFFLINE = "offline";
+    static final String WHISPER_OFF = "off";
+    static final String WHISPER_DEFAULT = WHISPER_ALL;
     /**
      * Counts the changes made in Launcher settings. Home remembers the count it was built with and rebuilds on
      * resume when it differs, however the settings were left (see MainActivity#onResume).

@@ -2,6 +2,12 @@ plugins {
     id 'com.android.application'
 }
 
+def locProps = new Properties()
+def locFile = rootProject.file("../location.properties")
+if (locFile.exists()) {
+    locFile.withInputStream { locProps.load(it) }
+}
+
 android {
     namespace 'com.gathin.chillradio'
     compileSdk 34
@@ -12,6 +18,11 @@ android {
         targetSdk 34
         versionCode 1
         versionName '1.0'
+        resValue "string", "loc_lat", locProps.getProperty("latitude", "")
+        resValue "string", "loc_lon", locProps.getProperty("longitude", "")
+        resValue "string", "loc_area", locProps.getProperty("area", "")
+        resValue "string", "loc_short_area", locProps.getProperty("short_area", "Local")
+        resValue "string", "loc_city", locProps.getProperty("city", "")
     }
 
     buildTypes {

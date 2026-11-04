@@ -51,7 +51,5 @@
     "com.gathin.btconnect"
   ],
   "key_filter": false,
-  "consume_volume_keys": false,
-  "latitude": "12.97",
-  "longitude": "77.59"
+  "consume_volume_keys": false
 }

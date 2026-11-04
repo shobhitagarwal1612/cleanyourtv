@@ -206,6 +206,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView raceKicker, raceHeadline, raceSessions;
     /** game_day: each team's next game from an add-on, rotating in the race panel; null when the key is off. */
     private GameDay gameDay;
+    private DailyWhisper dailyWhisper;
     private View raceBar;
     private LinearLayout racePager;
     private long rotationStart;
@@ -448,6 +449,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             sky.update();
             wallpaperPlayer.update();
             if (homeWeather != null) homeWeather.onTick();
+            if (dailyWhisper != null) dailyWhisper.onTick();
             handler.postDelayed(this, MINUTE_MS);
         }
     };
@@ -586,6 +588,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         raceBar = findViewById(R.id.raceBar);
         racePager = findViewById(R.id.racePager);
         gameDay = GameDay.create(this, cfg.gameDay, handler, this::updatePanel);
+        String whisperMode = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE)
+                .getString(Config.DAILY_WHISPER_KEY, Config.WHISPER_DEFAULT);
+        dailyWhisper = new DailyWhisper(this, getString(R.string.home_weather_app), whisperMode, handler, this::updatePanel);
         // The rotation runs on the clock that never jumps: setting the TV's time must not stall or stretch a turn.
         rotationStart = SystemClock.elapsedRealtime();
         showStats = cfg.showStats;
@@ -776,7 +781,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // game_day: the panel above the dock rides up with the cards instead of being covered by them, and fades
         // out by the time it reaches the clock. The grid's own offset is read, so a jump (Home, a restored focus)
         // lands right too.
-        if (gameDay != null) {
+        if (gameDay != null || (dailyWhisper != null && dailyWhisper.isEnabled())) {
             View clockBlock = findViewById(R.id.leftBlock);
             grid.addOnScrollListener(new RecyclerView.OnScrollListener() {
                 @Override
@@ -1150,6 +1155,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (showStats) startStats();
         if (homeWeather != null) homeWeather.onResume();
+        if (dailyWhisper != null) dailyWhisper.onResume();
         if (gameDay != null) gameDay.start();
         sky.update();
         wallpaperPlayer.start();
@@ -1569,6 +1575,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         cancelHoldOk();
         RoomModes.removeOverlays();
         if (gameDay != null) gameDay.shutdown();
+        if (dailyWhisper != null) dailyWhisper.shutdown();
         unregisterReceiver(packageReceiver);
         if (openOnStartOnWake) unregisterReceiver(wakeReceiver);
         wallpaperPlayer.close();
@@ -3246,11 +3253,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * each team's next game takes a turn there, and the theme's F1 weekend is one more turn drawn as today.
      */
     private void updatePanel() {
+        handler.removeCallbacks(turnTick);
         if (gameDay == null) {
-            updateRace();
+            if (dailyWhisper != null && dailyWhisper.isEnabled()) {
+                updateWhisperPanel();
+            } else {
+                raceHeadline.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 34);
+                updateRace();
+            }
             return;
         }
-        handler.removeCallbacks(turnTick);
         long now = System.currentTimeMillis();
         List<GameDay.Turn> games = gameDay.turns();
         for (GameDay.Turn g : games) {
@@ -3271,6 +3283,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         long since = SystemClock.elapsedRealtime() - rotationStart;
         int on = GameDay.current(turns.size(), since, seconds);
         GameDay.Turn t = turns.get(on);
+        raceHeadline.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 34);
         if (t.f1) {
             raceBar.setBackgroundResource(R.drawable.race_bar);
             raceSessions.setVisibility(View.VISIBLE);
@@ -3295,6 +3308,44 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         showPager(turns.size(), on);
         if (turns.size() > 1 && !stopped) handler.postDelayed(turnTick, GameDay.delayToNextTurn(since, seconds));
+    }
+
+    private void updateWhisperPanel() {
+        long now = System.currentTimeMillis();
+        List<DailyWhisper.Item> whispers = dailyWhisper.itemsNow();
+        RaceWeekend.State f1 = raceCalendar.isEmpty() ? null : RaceWeekend.at(raceCalendar, java.time.Instant.ofEpochMilli(now));
+        int total = whispers.size() + (f1 != null ? 1 : 0);
+        if (total == 0) {
+            racePanel.setVisibility(View.GONE);
+            return;
+        }
+        int seconds = DailyWhisper.TURN_SECONDS;
+        long since = SystemClock.elapsedRealtime() - rotationStart;
+        int on = GameDay.current(total, since, seconds);
+        if (f1 != null && on == whispers.size()) {
+            raceBar.setBackgroundResource(R.drawable.race_bar);
+            raceHeadline.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 34);
+            raceSessions.setVisibility(View.VISIBLE);
+            updateRace();
+        } else {
+            DailyWhisper.Item item = whispers.get(on);
+            GradientDrawable bar = new GradientDrawable();
+            bar.setCornerRadius(1.5f * density);
+            bar.setColor(item.colour);
+            raceBar.setBackground(bar);
+            raceKicker.setText(item.kicker);
+            raceHeadline.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 25);
+            raceHeadline.setText(item.headline);
+            if (item.subline == null || item.subline.isEmpty()) {
+                raceSessions.setVisibility(View.GONE);
+            } else {
+                raceSessions.setText(item.subline);
+                raceSessions.setVisibility(View.VISIBLE);
+            }
+            racePanel.setVisibility(View.VISIBLE);
+        }
+        showPager(total, on);
+        if (total > 1 && !stopped) handler.postDelayed(turnTick, GameDay.delayToNextTurn(since, seconds));
     }
 
     /** One dot per turn, the one on screen bright; none for a single turn. */

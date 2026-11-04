@@ -39,6 +39,7 @@ public final class LauncherSettingsActivity extends Activity {
     private TextView advancedChoice;
     private TextView followThemeChoice;
     private TextView openOnStartChoice;
+    private TextView dailyWhisperChoice;
     private TextView idleActionChoice;
     private int columns;
     private int rowsBelowDock;
@@ -148,6 +149,8 @@ public final class LauncherSettingsActivity extends Activity {
                         .show();
             }
         });
+        dailyWhisperChoice = findViewById(R.id.dailyWhisperChoice);
+        dailyWhisperChoice.setOnClickListener(v -> showDailyWhisperPicker());
         idleActionChoice = findViewById(R.id.idleActionChoice);
         idleActionChoice.setOnClickListener(v -> showIdleActionPicker());
         openOnStartChoice = findViewById(R.id.openOnStartChoice);
@@ -161,7 +164,8 @@ public final class LauncherSettingsActivity extends Activity {
             choices.edit().remove("columns").remove(Config.ROWS_BELOW_DOCK_KEY).remove("animations")
                     .remove("advanced_effects").remove(Config.WALLPAPER_CHOICE_KEY)
                     .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY)
-                    .remove(Config.IDLE_ACTION_KEY).remove(OpenOnStart.KEY).commit();
+                    .remove(Config.DAILY_WHISPER_KEY).remove(Config.IDLE_ACTION_KEY)
+                    .remove(OpenOnStart.KEY).commit();
             Config current = Config.load(this);
             columns = current.columns;
             rowsBelowDock = current.rowsBelowDock;
@@ -221,6 +225,55 @@ public final class LauncherSettingsActivity extends Activity {
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    private static final String[] DAILY_WHISPER_VALUES = {
+            Config.WHISPER_ALL,
+            Config.WHISPER_NO_NEWS,
+            Config.WHISPER_OFFLINE,
+            Config.WHISPER_OFF
+    };
+
+    private void showDailyWhisperPicker() {
+        String[] labels = {
+                getString(R.string.daily_whisper_all),
+                getString(R.string.daily_whisper_no_news),
+                getString(R.string.daily_whisper_offline),
+                getString(R.string.daily_whisper_off)
+        };
+        String current = choices.getString(Config.DAILY_WHISPER_KEY, Config.WHISPER_DEFAULT);
+        int checked = 0;
+        for (int i = 0; i < DAILY_WHISPER_VALUES.length; i++) {
+            if (DAILY_WHISPER_VALUES[i].equals(current)) {
+                checked = i;
+                break;
+            }
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.daily_whisper_label)
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    dialog.dismiss();
+                    choices.edit().putString(Config.DAILY_WHISPER_KEY, DAILY_WHISPER_VALUES[which]).apply();
+                    changed();
+                    refresh();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private String dailyWhisperLabel() {
+        String mode = choices.getString(Config.DAILY_WHISPER_KEY, Config.WHISPER_DEFAULT);
+        switch (mode) {
+            case Config.WHISPER_NO_NEWS:
+                return getString(R.string.daily_whisper_no_news_short);
+            case Config.WHISPER_OFFLINE:
+                return getString(R.string.daily_whisper_offline_short);
+            case Config.WHISPER_OFF:
+                return getString(R.string.off);
+            case Config.WHISPER_ALL:
+            default:
+                return getString(R.string.daily_whisper_all_short);
+        }
     }
 
     private static final String[] IDLE_ACTION_VALUES = {
@@ -373,6 +426,7 @@ public final class LauncherSettingsActivity extends Activity {
                 "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
                         : wallpaperCurrent != null ? wallpaperCurrent
                         : getString(R.string.wallpaper_theme_default)));
+        dailyWhisperChoice.setText(getString(R.string.daily_whisper_state, dailyWhisperLabel()));
         idleActionChoice.setText(getString(R.string.idle_action_state, idleActionLabel()));
         openOnStartChoice.setText(getString(R.string.open_on_start_state, openOnStartLabel()));
         followThemeChoice.setSelected(!hasOnTvChoices());
@@ -382,8 +436,8 @@ public final class LauncherSettingsActivity extends Activity {
         return choices.contains("columns") || choices.contains(Config.ROWS_BELOW_DOCK_KEY)
                 || choices.contains("animations") || choices.contains("advanced_effects")
                 || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.DOCK_OPACITY_KEY)
-                || choices.contains(Config.CLOCK_FORMAT_KEY) || choices.contains(Config.IDLE_ACTION_KEY)
-                || choices.contains(OpenOnStart.KEY);
+                || choices.contains(Config.CLOCK_FORMAT_KEY) || choices.contains(Config.DAILY_WHISPER_KEY)
+                || choices.contains(Config.IDLE_ACTION_KEY) || choices.contains(OpenOnStart.KEY);
     }
 
     private void open(Intent intent) {

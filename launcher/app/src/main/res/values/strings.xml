@@ -75,6 +75,15 @@
     <string name="idle_action_standby_short" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Hardware standby</string>
     <string name="idle_action_chill_mode_short" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Chill Mode</string>
     <string name="idle_action_blackout_short" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Screen blackout</string>
+    <string name="daily_whisper_label" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Daily Whisper on Home</string>
+    <string name="daily_whisper_state" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Daily Whisper: %1$s</string>
+    <string name="daily_whisper_all" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">All (Weather alerts, 1 top headline, festivals &amp; quotes)</string>
+    <string name="daily_whisper_no_news" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">No news (Weather alerts, festivals &amp; quotes)</string>
+    <string name="daily_whisper_offline" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Offline only (Upcoming festivals &amp; daily quote)</string>
+    <string name="daily_whisper_off" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Off (Hide Daily Whisper)</string>
+    <string name="daily_whisper_all_short" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">All (with 1 headline)</string>
+    <string name="daily_whisper_no_news_short" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">No news (Alerts, festivals &amp; quotes)</string>
+    <string name="daily_whisper_offline_short" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Festivals &amp; quotes only</string>
     <string name="advanced_effects_warning">Adds a lifted tile, icon zoom and smooth colour transitions. May increase memory use; the actual difference depends on your TV.</string>
     <string name="follow_theme">Follow theme (reset on-TV choices)</string>
     <string name="follow_theme_hint">Uses the current theme or built-in layout and motion settings. Pushing or resetting a theme also clears your on-TV choices.</string>
