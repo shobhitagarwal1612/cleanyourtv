@@ -65,11 +65,17 @@ final class ClockScene {
     private Map<String, Set<String>> moods;
     private String latitude, longitude;
     private boolean avoidRightSide;
+    static final int STYLE_FLOATING = 0;
+    static final int STYLE_CORNER = 1;
+    static final int STYLE_HIDDEN = 2;
+    private int clockStyle = STYLE_FLOATING;
 
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
-            moveClock();
+            if (clockStyle == STYLE_FLOATING) {
+                moveClock();
+            }
             shiftGlow();
             advanceWallpaper();
             handler.postDelayed(this, MOVE_MS);
@@ -97,6 +103,22 @@ final class ClockScene {
         }
     }
 
+    int getClockStyle() {
+        return clockStyle;
+    }
+
+    void setClockStyle(int style) {
+        if (this.clockStyle == style) return;
+        this.clockStyle = style;
+        content.animate().cancel();
+        if (style == STYLE_HIDDEN) {
+            content.animate().alpha(0f).setDuration(300).start();
+        } else {
+            placeClock();
+            content.animate().alpha(style == STYLE_CORNER ? 0.78f : 1f).setDuration(300).start();
+        }
+    }
+
     void setAmbientVisible(boolean visible) {
         ambient.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
@@ -105,7 +127,9 @@ final class ClockScene {
         content.setAlpha(0f);
         content.post(() -> {
             placeClock();
-            content.animate().alpha(1f).setDuration(1200).start();
+            if (clockStyle != STYLE_HIDDEN) {
+                content.animate().alpha(clockStyle == STYLE_CORNER ? 0.78f : 1f).setDuration(1200).start();
+            }
         });
         handler.removeCallbacks(tick);
         handler.postDelayed(tick, MOVE_MS);
@@ -262,15 +286,27 @@ final class ClockScene {
         }).start();
     }
 
-    /** A random spot that keeps the whole clock on screen and clear of the HUD pill and Vinyl Turntable. */
+    /** A spot that keeps the whole clock on screen and clear of the HUD pill and Vinyl Turntable. */
     private void placeClock() {
         View parent = (View) content.getParent();
         if (parent == null) return;
         int maxX = Math.max(0, parent.getWidth() - content.getWidth());
         int maxY = Math.max(0, parent.getHeight() - content.getHeight());
-        float xSpan = avoidRightSide ? 0.32f : 0.8f;
-        float x = maxX * (0.08f + xSpan * random.nextFloat());
-        float y = maxY * (0.08f + 0.64f * random.nextFloat());
+        float x, y;
+        if (clockStyle == STYLE_CORNER) {
+            x = parent.getWidth() * 0.055f;
+            y = parent.getHeight() * 0.075f;
+            content.setScaleX(0.76f);
+            content.setScaleY(0.76f);
+            content.setPivotX(0f);
+            content.setPivotY(0f);
+        } else {
+            content.setScaleX(1f);
+            content.setScaleY(1f);
+            float xSpan = avoidRightSide ? 0.32f : 0.8f;
+            x = maxX * (0.08f + xSpan * random.nextFloat());
+            y = maxY * (0.08f + 0.64f * random.nextFloat());
+        }
         content.setX(x);
         content.setY(y);
         if (parent.getWidth() > 0 && parent.getHeight() > 0) {
