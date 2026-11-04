@@ -43,4 +43,11 @@
   export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
   export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
   ```
-- Note: [`work/chill-radio`](file:///Users/ashobhit/.gemini/jetski/scratch/cleanyourtv/work/chill-radio) is a customized fork of `addons/chill-radio` with `INTERNET`, `READ_LOGS`, `KILL_BACKGROUND_PROCESSES`, Open-Meteo live weather, SomaFM live radio, and the `/reap` RAM optimizer endpoint. Build `work/chill-radio` using the launcher's Gradle wrapper (`launcher/gradlew -p work/chill-radio assembleRelease`).
+- Note: [`work/chill-radio`](file:///Users/ashobhit/StudioProjects/cleanyourtv/work/chill-radio) is a customized fork of `addons/chill-radio` with `INTERNET`, `READ_LOGS`, `KILL_BACKGROUND_PROCESSES`, Open-Meteo live weather, SomaFM live radio, and the `/reap` RAM optimizer endpoint. Build `work/chill-radio` using the launcher's Gradle wrapper (`launcher/gradlew -p work/chill-radio assembleRelease`).
+
+## 5. Git Branch Separation & Upstream Sync Protocol
+- **Keep `main` Clean**: `main` tracks upstream `origin/main` (`Gathin23/cleanyourtv`) and is mirrored to `my-github/main` (`shobhitagarwal1612/cleanyourtv`). Never commit device-specific or custom changes directly to `main`.
+- **Feature Branch (`xiaomi-mitv-customizations`)**: All custom changes to `launcher/`, `addons/`, and `work/` belong on `xiaomi-mitv-customizations`.
+- **Cautious Merge Audit & TV Push Assessment**:
+  - When merging `main` into `xiaomi-mitv-customizations`, always audit overlapping files (`git diff <before>..<after> -- launcher/ addons/ work/`) line-by-line so upstream changes never silently overwrite custom logic.
+  - Always assess and state clearly whether the newly merged/committed changes require rebuilding and deploying an APK to the TV.
