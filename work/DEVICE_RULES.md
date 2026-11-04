@@ -46,6 +46,8 @@
 - Note: [`work/chill-radio`](file:///Users/ashobhit/StudioProjects/cleanyourtv/work/chill-radio) is a customized fork of `addons/chill-radio` with `INTERNET`, `READ_LOGS`, `KILL_BACKGROUND_PROCESSES`, Open-Meteo live weather, SomaFM live radio, and the `/reap` RAM optimizer endpoint. Build `work/chill-radio` using the launcher's Gradle wrapper (`launcher/gradlew -p work/chill-radio assembleRelease`).
 
 ## 5. Git Branch Separation & Upstream Sync Protocol
+- **Never Commit or Push Without Explicit User Confirmation**:
+  - **NEVER** run `git commit` or `git push` automatically after making or testing changes. Always build/test locally or on the TV first, show the results/screenshots to the user, and wait for explicit confirmation from the user before committing or uploading to GitHub.
 - **Keep `main` Clean**: `main` tracks upstream `origin/main` (`Gathin23/cleanyourtv`) and is mirrored to `my-github/main` (`shobhitagarwal1612/cleanyourtv`). Never commit device-specific or custom changes directly to `main`.
 - **Feature Branch (`xiaomi-mitv-customizations`)**: All custom changes to `launcher/`, `addons/`, and `work/` belong on `xiaomi-mitv-customizations`.
 - **Cautious Merge Audit & TV Push Assessment**:

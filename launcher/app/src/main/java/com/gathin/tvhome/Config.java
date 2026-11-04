@@ -57,6 +57,32 @@ final class Config {
     static final String WHISPER_OFFLINE = "offline";
     static final String WHISPER_OFF = "off";
     static final String WHISPER_DEFAULT = WHISPER_ALL;
+    static final String WHISPER_CAT_WEATHER = "whisper_cat_weather";
+    static final String WHISPER_CAT_FESTIVALS = "whisper_cat_festivals";
+    static final String WHISPER_CAT_NEWS = "whisper_cat_news";
+    static final String WHISPER_CAT_QUOTES = "whisper_cat_quotes";
+
+    static boolean isWhisperCategoryEnabled(SharedPreferences prefs, String catKey) {
+        if (prefs.contains(catKey)) {
+            return prefs.getBoolean(catKey, true);
+        }
+        String mode = prefs.getString(DAILY_WHISPER_KEY, WHISPER_DEFAULT);
+        if (WHISPER_OFF.equals(mode)) return false;
+        if (WHISPER_OFFLINE.equals(mode)) {
+            return WHISPER_CAT_FESTIVALS.equals(catKey) || WHISPER_CAT_QUOTES.equals(catKey);
+        }
+        if (WHISPER_NO_NEWS.equals(mode)) {
+            return !WHISPER_CAT_NEWS.equals(catKey);
+        }
+        return true;
+    }
+
+    static boolean anyWhisperCategoryEnabled(SharedPreferences prefs) {
+        return isWhisperCategoryEnabled(prefs, WHISPER_CAT_WEATHER)
+                || isWhisperCategoryEnabled(prefs, WHISPER_CAT_FESTIVALS)
+                || isWhisperCategoryEnabled(prefs, WHISPER_CAT_NEWS)
+                || isWhisperCategoryEnabled(prefs, WHISPER_CAT_QUOTES);
+    }
     /**
      * Counts the changes made in Launcher settings. Home remembers the count it was built with and rebuilds on
      * resume when it differs, however the settings were left (see MainActivity#onResume).

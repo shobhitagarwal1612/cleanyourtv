@@ -164,7 +164,9 @@ public final class LauncherSettingsActivity extends Activity {
             choices.edit().remove("columns").remove(Config.ROWS_BELOW_DOCK_KEY).remove("animations")
                     .remove("advanced_effects").remove(Config.WALLPAPER_CHOICE_KEY)
                     .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY)
-                    .remove(Config.DAILY_WHISPER_KEY).remove(Config.IDLE_ACTION_KEY)
+                    .remove(Config.DAILY_WHISPER_KEY).remove(Config.WHISPER_CAT_WEATHER)
+                    .remove(Config.WHISPER_CAT_FESTIVALS).remove(Config.WHISPER_CAT_NEWS)
+                    .remove(Config.WHISPER_CAT_QUOTES).remove(Config.IDLE_ACTION_KEY)
                     .remove(OpenOnStart.KEY).commit();
             Config current = Config.load(this);
             columns = current.columns;
@@ -227,53 +229,44 @@ public final class LauncherSettingsActivity extends Activity {
                 .show();
     }
 
-    private static final String[] DAILY_WHISPER_VALUES = {
-            Config.WHISPER_ALL,
-            Config.WHISPER_NO_NEWS,
-            Config.WHISPER_OFFLINE,
-            Config.WHISPER_OFF
+    private static final String[] WHISPER_CAT_KEYS = {
+            Config.WHISPER_CAT_WEATHER,
+            Config.WHISPER_CAT_FESTIVALS,
+            Config.WHISPER_CAT_NEWS,
+            Config.WHISPER_CAT_QUOTES
     };
 
     private void showDailyWhisperPicker() {
         String[] labels = {
-                getString(R.string.daily_whisper_all),
-                getString(R.string.daily_whisper_no_news),
-                getString(R.string.daily_whisper_offline),
-                getString(R.string.daily_whisper_off)
+                "Weather & AQI Alerts",
+                "Festivals & Sky Events",
+                "Top Daily Headline",
+                "Daily Thought"
         };
-        String current = choices.getString(Config.DAILY_WHISPER_KEY, Config.WHISPER_DEFAULT);
-        int checked = 0;
-        for (int i = 0; i < DAILY_WHISPER_VALUES.length; i++) {
-            if (DAILY_WHISPER_VALUES[i].equals(current)) {
-                checked = i;
-                break;
-            }
+        boolean[] checked = new boolean[WHISPER_CAT_KEYS.length];
+        for (int i = 0; i < WHISPER_CAT_KEYS.length; i++) {
+            checked[i] = Config.isWhisperCategoryEnabled(choices, WHISPER_CAT_KEYS[i]);
         }
         new AlertDialog.Builder(this)
                 .setTitle(R.string.daily_whisper_label)
-                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
-                    dialog.dismiss();
-                    choices.edit().putString(Config.DAILY_WHISPER_KEY, DAILY_WHISPER_VALUES[which]).apply();
+                .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> {
+                    checked[which] = isChecked;
+                    choices.edit().putBoolean(WHISPER_CAT_KEYS[which], isChecked).apply();
                     changed();
                     refresh();
                 })
-                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, null)
                 .show();
     }
 
     private String dailyWhisperLabel() {
-        String mode = choices.getString(Config.DAILY_WHISPER_KEY, Config.WHISPER_DEFAULT);
-        switch (mode) {
-            case Config.WHISPER_NO_NEWS:
-                return getString(R.string.daily_whisper_no_news_short);
-            case Config.WHISPER_OFFLINE:
-                return getString(R.string.daily_whisper_offline_short);
-            case Config.WHISPER_OFF:
-                return getString(R.string.off);
-            case Config.WHISPER_ALL:
-            default:
-                return getString(R.string.daily_whisper_all_short);
+        int enabled = 0;
+        for (String key : WHISPER_CAT_KEYS) {
+            if (Config.isWhisperCategoryEnabled(choices, key)) enabled++;
         }
+        if (enabled == 0) return getString(R.string.off);
+        if (enabled == WHISPER_CAT_KEYS.length) return getString(R.string.daily_whisper_all_short);
+        return enabled + "/" + WHISPER_CAT_KEYS.length + " " + getString(R.string.on);
     }
 
     private static final String[] IDLE_ACTION_VALUES = {
@@ -437,6 +430,8 @@ public final class LauncherSettingsActivity extends Activity {
                 || choices.contains("animations") || choices.contains("advanced_effects")
                 || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.DOCK_OPACITY_KEY)
                 || choices.contains(Config.CLOCK_FORMAT_KEY) || choices.contains(Config.DAILY_WHISPER_KEY)
+                || choices.contains(Config.WHISPER_CAT_WEATHER) || choices.contains(Config.WHISPER_CAT_FESTIVALS)
+                || choices.contains(Config.WHISPER_CAT_NEWS) || choices.contains(Config.WHISPER_CAT_QUOTES)
                 || choices.contains(Config.IDLE_ACTION_KEY) || choices.contains(OpenOnStart.KEY);
     }
 

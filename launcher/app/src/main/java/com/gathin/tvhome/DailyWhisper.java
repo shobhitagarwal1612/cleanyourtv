@@ -1,6 +1,7 @@
 package com.gathin.tvhome;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.ProviderInfo;
 import android.database.Cursor;
 import android.net.Uri;
@@ -19,10 +20,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Calm, auto-refreshing daily context for the Home screen's open editorial slot under the clock:
+ * Calm, auto-refreshing daily context for the Home screen's open editorial slot:
  * - High-signal local weather/AQI advisories (via the weather provider, when active)
  * - Upcoming festivals, public holidays and astronomy nights (100% offline, 0–7 days ahead)
- * - Optional single distilled daily headline (can be toggled off in Launcher settings)
+ * - Optional single distilled daily headline
  * - Time-of-day literary & philosophical thought of the day (100% offline anthology)
  */
 final class DailyWhisper {
@@ -51,7 +52,6 @@ final class DailyWhisper {
 
     private final Context app;
     private final String providerPkg;
-    private final String mode;
     private final Handler main;
     private final Runnable onUpdate;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -62,13 +62,16 @@ final class DailyWhisper {
     DailyWhisper(Context context, String providerPkg, String mode, Handler main, Runnable onUpdate) {
         this.app = context.getApplicationContext();
         this.providerPkg = providerPkg == null ? "" : providerPkg.trim();
-        this.mode = mode == null ? Config.WHISPER_DEFAULT : mode;
         this.main = main;
         this.onUpdate = onUpdate;
     }
 
+    private SharedPreferences prefs() {
+        return app.getSharedPreferences(Config.SETTINGS_NAME, Context.MODE_PRIVATE);
+    }
+
     boolean isEnabled() {
-        return !Config.WHISPER_OFF.equals(mode);
+        return Config.anyWhisperCategoryEnabled(prefs());
     }
 
     void onResume() {
@@ -81,22 +84,32 @@ final class DailyWhisper {
         askProvider(REFRESH_GAP_MS);
     }
 
+    void onCategoriesChanged() {
+        lastAskedElapsed = -REFRESH_GAP_MS;
+        if (isEnabled()) {
+            askProvider(0L);
+        }
+        if (onUpdate != null) onUpdate.run();
+    }
+
     void shutdown() {
         io.shutdownNow();
     }
 
     private void askProvider(long minGapMs) {
-        if (Config.WHISPER_OFFLINE.equals(mode) || Config.WHISPER_OFF.equals(mode) || providerPkg.isEmpty()) {
+        SharedPreferences p = prefs();
+        boolean includeWeather = Config.isWhisperCategoryEnabled(p, Config.WHISPER_CAT_WEATHER);
+        boolean includeNews = Config.isWhisperCategoryEnabled(p, Config.WHISPER_CAT_NEWS);
+        if ((!includeWeather && !includeNews) || providerPkg.isEmpty()) {
             return;
         }
         long now = SystemClock.elapsedRealtime();
         if (busy || now - lastAskedElapsed < minGapMs) return;
         lastAskedElapsed = now;
         busy = true;
-        final boolean includeNews = Config.WHISPER_ALL.equals(mode);
         try {
             io.execute(() -> {
-                List<Item> fetched = readProvider(app, providerPkg, includeNews);
+                List<Item> fetched = readProvider(app, providerPkg, includeWeather, includeNews);
                 connectedItems = fetched;
                 main.post(() -> {
                     busy = false;
@@ -108,7 +121,7 @@ final class DailyWhisper {
         }
     }
 
-    private static List<Item> readProvider(Context app, String pkg, boolean includeNews) {
+    private static List<Item> readProvider(Context app, String pkg, boolean includeWeather, boolean includeNews) {
         String authority = pkg + ".now";
         List<Item> out = new ArrayList<>(2);
         try {
@@ -120,6 +133,7 @@ final class DailyWhisper {
                 if (c == null) return out;
                 while (c.moveToNext()) {
                     String kind = c.getString(0);
+                    if ("weather".equals(kind) && !includeWeather) continue;
                     if ("news".equals(kind) && !includeNews) continue;
                     String kicker = safe(c.getString(1), 44);
                     String headline = safe(c.getString(2), 62);
@@ -143,26 +157,37 @@ final class DailyWhisper {
 
     /** Builds the ordered list of active turns for right now (at most 3–4 calm turns). */
     List<Item> itemsNow() {
-        if (!isEnabled()) return Collections.emptyList();
+        SharedPreferences p = prefs();
+        boolean catWeather = Config.isWhisperCategoryEnabled(p, Config.WHISPER_CAT_WEATHER);
+        boolean catFestivals = Config.isWhisperCategoryEnabled(p, Config.WHISPER_CAT_FESTIVALS);
+        boolean catNews = Config.isWhisperCategoryEnabled(p, Config.WHISPER_CAT_NEWS);
+        boolean catQuotes = Config.isWhisperCategoryEnabled(p, Config.WHISPER_CAT_QUOTES);
+        if (!catWeather && !catFestivals && !catNews && !catQuotes) {
+            return Collections.emptyList();
+        }
         List<Item> result = new ArrayList<>(4);
         List<Item> net = connectedItems;
 
         // 1. Severe Weather / Rain / AQI Alert takes first slot if active
-        for (Item item : net) {
-            if (item.colour == 0xFFEF4444 || item.colour == 0xFFF59E0B) {
-                result.add(item);
+        if (catWeather) {
+            for (Item item : net) {
+                if (item.colour == 0xFFEF4444 || item.colour == 0xFFF59E0B) {
+                    result.add(item);
+                }
             }
         }
 
         // 2. Upcoming Festival / Holiday / Sky event within 7 days
         LocalDate today = LocalDate.now();
-        Item fest = upcomingFestivalOrSky(today);
-        if (fest != null) {
-            result.add(fest);
+        if (catFestivals) {
+            Item fest = upcomingFestivalOrSky(today);
+            if (fest != null) {
+                result.add(fest);
+            }
         }
 
-        // 3. Single Distilled Top News Headline (when mode == WHISPER_ALL)
-        if (Config.WHISPER_ALL.equals(mode)) {
+        // 3. Single Distilled Top News Headline
+        if (catNews) {
             for (Item item : net) {
                 if (item.colour != 0xFFEF4444 && item.colour != 0xFFF59E0B) {
                     result.add(item);
@@ -171,7 +196,9 @@ final class DailyWhisper {
         }
 
         // 4. Time-of-Day Literary / Philosophical Thought of the Day
-        result.add(quoteFor(today, LocalTime.now().getHour()));
+        if (catQuotes) {
+            result.add(quoteFor(today, LocalTime.now().getHour()));
+        }
         return result;
     }
 

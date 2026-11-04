@@ -543,8 +543,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         cinematicWhiteFocus = cfg.cinematicWhiteFocus;
         heroArtAlpha = cfg.cinematicArt / 100f;
         if (cinematic) setUpCinematicShelf(cfg.cinematicScrim);
-        // dock_title false: the name above the dock (and the cinematic lines under it) never shows; the glow
-        // still follows the dock.
+        // dock_title false: the duplicate name above the dock never shows
         if (!cfg.dockTitle) hero.setVisibility(View.GONE);
         greeting = findViewById(R.id.greeting);
         clockBlock = findViewById(R.id.leftBlock);
@@ -591,6 +590,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         String whisperMode = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE)
                 .getString(Config.DAILY_WHISPER_KEY, Config.WHISPER_DEFAULT);
         dailyWhisper = new DailyWhisper(this, getString(R.string.home_weather_app), whisperMode, handler, this::updatePanel);
+        setUpWhisperInteraction();
         // The rotation runs on the clock that never jumps: setting the TV's time must not stall or stretch a turn.
         rotationStart = SystemClock.elapsedRealtime();
         showStats = cfg.showStats;
@@ -788,7 +788,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
                     int shift = rv.canScrollVertically(-1) ? rv.computeVerticalScrollOffset() : 0;
                     float baseOffset = (gameDay == null && dailyWhisper != null && dailyWhisper.isEnabled())
-                            ? -36f * density : 0f;
+                            ? -28f * density : 0f;
                     racePanel.setTranslationY(baseOffset - shift);
                     int room = Math.max(1, (int) (racePanel.getTop() + baseOffset) - clockBlock.getBottom());
                     racePanel.setAlpha(Math.max(0f, 1f - shift / (float) room));
@@ -921,6 +921,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return true;
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (dailyWhisper != null && racePanel.getVisibility() == View.VISIBLE) {
+                    racePanel.requestFocus();
+                    return true;
+                }
                 // Back to the dock tile Up came from, not wherever the focus finder lands.
                 focusTile(singleRow ? lastFocused : lastFocused % COLUMNS);
                 return true;
@@ -2737,9 +2741,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         int count = adapter.appCount();
         int target;
         if (singleRow) {
-            // One row: Up leaves for the top bar, Down has nowhere to go, and Left/Right walk the whole row,
+            // One row: Up leaves for Daily Whisper or the top bar, Down has nowhere to go, and Left/Right walk the whole row,
             // stopping at its two ends (the default focus search scrolls the row to the next tile).
-            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return false;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (!reordering && dailyWhisper != null && racePanel.getVisibility() == View.VISIBLE) {
+                    racePanel.requestFocus();
+                    return true;
+                }
+                return false;
+            }
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) return onBoundaryBump();
             boolean forward = rtlAppGrid ? keyCode == KeyEvent.KEYCODE_DPAD_LEFT : keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
             int last = adapter.focusablePosition(count - 1);
@@ -2770,7 +2780,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return false;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
+            if (position < COLUMNS) {
+                if (!reordering && dailyWhisper != null && racePanel.getVisibility() == View.VISIBLE) {
+                    racePanel.requestFocus();
+                    return true;
+                }
+                return false;          // dock row: let focus move to the top bar
+            }
             target = position - COLUMNS;
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
@@ -3321,8 +3337,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             racePanel.setVisibility(View.GONE);
             return;
         }
+        alignWhisperRight(true);
         int shift = (grid != null && grid.canScrollVertically(-1)) ? grid.computeVerticalScrollOffset() : 0;
-        racePanel.setTranslationY(-36f * density - shift);
+        racePanel.setTranslationY(-28f * density - shift);
         int seconds = DailyWhisper.TURN_SECONDS;
         long since = SystemClock.elapsedRealtime() - rotationStart;
         int on = GameDay.current(total, since, seconds);
@@ -3342,15 +3359,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             raceBar.setBackground(bar);
             raceKicker.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11);
             raceKicker.setText(item.kicker);
-            raceHeadline.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 21);
+            raceHeadline.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 22);
             raceHeadline.setText(item.headline);
-            setTopMarginDp(raceHeadline, 5);
-            setTopMarginDp(raceSessions, 4);
-            setTopMarginDp(racePager, 7);
+            setTopMarginDp(raceHeadline, 6);
+            setTopMarginDp(raceSessions, 5);
+            setTopMarginDp(racePager, 8);
             if (item.subline == null || item.subline.isEmpty()) {
                 raceSessions.setVisibility(View.GONE);
             } else {
-                raceSessions.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11.5f);
+                raceSessions.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12f);
                 raceSessions.setText(item.subline);
                 raceSessions.setVisibility(View.VISIBLE);
             }
@@ -3358,6 +3375,199 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         showPager(total, on);
         if (total > 1 && !stopped) handler.postDelayed(turnTick, GameDay.delayToNextTurn(since, seconds));
+    }
+
+    private void alignWhisperRight(boolean right) {
+        if (!(racePanel instanceof LinearLayout)) return;
+        LinearLayout panel = (LinearLayout) racePanel;
+        int padH = Math.round(16 * density);
+        int padV = Math.round(12 * density);
+        if (panel.getPaddingLeft() != padH || panel.getPaddingTop() != padV) {
+            panel.setPadding(padH, padV, padH, padV);
+        }
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) panel.getLayoutParams();
+        int targetGravity = right ? (Gravity.TOP | Gravity.RIGHT) : (Gravity.TOP | Gravity.LEFT);
+        int marginPx = Math.round((right ? 40 : 44) * density);
+        if (lp.gravity != targetGravity || lp.rightMargin != marginPx) {
+            lp.gravity = targetGravity;
+            lp.setMarginStart(marginPx);
+            lp.setMarginEnd(marginPx);
+            lp.leftMargin = marginPx;
+            lp.rightMargin = marginPx;
+            panel.setLayoutParams(lp);
+        }
+        panel.setGravity(right ? Gravity.RIGHT : Gravity.LEFT);
+        raceHeadline.setGravity(right ? Gravity.RIGHT : Gravity.LEFT);
+        raceSessions.setGravity(right ? Gravity.RIGHT : Gravity.LEFT);
+        if (raceBar.getParent() instanceof LinearLayout) {
+            LinearLayout kickerRow = (LinearLayout) raceBar.getParent();
+            LinearLayout.LayoutParams barLp = (LinearLayout.LayoutParams) raceBar.getLayoutParams();
+            int gap = Math.round(10 * density);
+            if (right && kickerRow.getChildAt(0) == raceBar) {
+                kickerRow.removeView(raceBar);
+                barLp.setMarginEnd(0);
+                barLp.setMarginStart(gap);
+                barLp.rightMargin = 0;
+                barLp.leftMargin = gap;
+                kickerRow.addView(raceBar);
+            } else if (!right && kickerRow.getChildAt(0) != raceBar) {
+                kickerRow.removeView(raceBar);
+                barLp.setMarginStart(0);
+                barLp.setMarginEnd(gap);
+                barLp.leftMargin = 0;
+                barLp.rightMargin = gap;
+                kickerRow.addView(raceBar, 0);
+            }
+        }
+    }
+
+    private void setUpWhisperInteraction() {
+        if (racePanel == null) return;
+        racePanel.setFocusable(true);
+        racePanel.setClickable(true);
+        GradientDrawable focusBg = new GradientDrawable();
+        focusBg.setCornerRadius(16f * density);
+        focusBg.setColor(0x26FFFFFF);
+        focusBg.setStroke(Math.max(1, Math.round(1.2f * density)), 0x66FFFFFF);
+        racePanel.setOnFocusChangeListener((v, focused) -> {
+            v.setBackground(focused ? focusBg : null);
+            if (advancedEffects) {
+                v.animate().scaleX(focused ? 1.02f : 1f).scaleY(focused ? 1.02f : 1f)
+                        .setDuration(reducedMotion ? Motion.REDUCED_MS : 160).start();
+            }
+        });
+        racePanel.setOnClickListener(v -> showDailyWhisperDialog());
+        racePanel.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                View settings = findViewById(R.id.btnSettings);
+                View target = settings != null && settings.getVisibility() == View.VISIBLE
+                        ? settings : firstTopButton();
+                if (target != null) target.requestFocus();
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                focusTile(singleRow ? lastFocused : lastFocused % COLUMNS);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                stepWhisperTurn(-1);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                stepWhisperTurn(1);
+                return true;
+            }
+            return false;
+        });
+    }
+
+    private void stepWhisperTurn(int delta) {
+        if (dailyWhisper == null) return;
+        List<DailyWhisper.Item> whispers = dailyWhisper.itemsNow();
+        RaceWeekend.State f1 = raceCalendar.isEmpty() ? null : RaceWeekend.at(raceCalendar, java.time.Instant.now());
+        int total = whispers.size() + (f1 != null ? 1 : 0);
+        if (total < 2) return;
+        int seconds = DailyWhisper.TURN_SECONDS;
+        long nowElapsed = SystemClock.elapsedRealtime();
+        int current = GameDay.current(total, nowElapsed - rotationStart, seconds);
+        int next = (current + delta % total + total) % total;
+        rotationStart = nowElapsed - (long) next * seconds * 1000L;
+        updatePanel();
+    }
+
+    private void showDailyWhisperDialog() {
+        final SharedPreferences prefs = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE);
+        final String[] keys = {
+                Config.WHISPER_CAT_WEATHER,
+                Config.WHISPER_CAT_FESTIVALS,
+                Config.WHISPER_CAT_NEWS,
+                Config.WHISPER_CAT_QUOTES
+        };
+        final String[] titles = {
+                "Weather & AQI Alerts",
+                "Festivals & Sky Events",
+                "Top Daily Headline",
+                "Daily Thought"
+        };
+        final int[] icons = {
+                R.drawable.ic_room_mode,
+                R.drawable.ic_room_mode,
+                R.drawable.ic_input,
+                R.drawable.ic_home_settings
+        };
+
+        LinearLayout panel = (LinearLayout) getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        int pad = Math.round(14 * density);
+        panel.setPadding(pad, Math.round(14 * density), pad, Math.round(12 * density));
+        LinearLayout rows = panel.findViewById(R.id.rows);
+
+        TextView header = new TextView(this);
+        header.setText("Daily Whisper");
+        header.setTextColor(0xFFFFFFFF);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f);
+        header.setPadding(Math.round(12 * density), Math.round(4 * density), Math.round(12 * density), Math.round(2 * density));
+        rows.addView(header);
+
+        TextView sub = new TextView(this);
+        sub.setText("Press OK to toggle each category on or off");
+        sub.setTextColor(0x99FFFFFF);
+        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        sub.setPadding(Math.round(12 * density), 0, Math.round(12 * density), Math.round(10 * density));
+        rows.addView(sub);
+
+        final View[] itemRows = new View[keys.length];
+        Runnable syncStates = () -> {
+            for (int i = 0; i < keys.length; i++) {
+                boolean on = Config.isWhisperCategoryEnabled(prefs, keys[i]);
+                View r = itemRows[i];
+                View dot = r.findViewById(R.id.dot);
+                TextView status = r.findViewById(R.id.status);
+                dot.setVisibility(on ? View.VISIBLE : View.GONE);
+                status.setVisibility(View.VISIBLE);
+                status.setText(on ? R.string.on : R.string.off);
+                status.setAlpha(on ? 1f : 0.55f);
+            }
+        };
+
+        for (int i = 0; i < keys.length; i++) {
+            final String key = keys[i];
+            View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
+            ((ImageView) row.findViewById(R.id.icon)).setImageResource(icons[i]);
+            ((TextView) row.findViewById(R.id.title)).setText(titles[i]);
+            row.setOnClickListener(v -> {
+                boolean next = !Config.isWhisperCategoryEnabled(prefs, key);
+                prefs.edit().putBoolean(key, next)
+                        .putLong(Config.SETTINGS_REVISION_KEY, prefs.getLong(Config.SETTINGS_REVISION_KEY, 0) + 1)
+                        .apply();
+                settingsRevision = prefs.getLong(Config.SETTINGS_REVISION_KEY, 0);
+                syncStates.run();
+                if (dailyWhisper != null) dailyWhisper.onCategoriesChanged();
+            });
+            itemRows[i] = row;
+            rows.addView(row);
+        }
+        syncStates.run();
+
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(panel);
+        dialog.setCanceledOnTouchOutside(true);
+        Window w = dialog.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setLayout(Math.round(380 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
+            w.setDimAmount(0.55f);
+        }
+        dialog.setOnDismissListener(d -> {
+            if (racePanel != null && racePanel.getVisibility() == View.VISIBLE) {
+                racePanel.requestFocus();
+            } else {
+                focusTile(singleRow ? lastFocused : lastFocused % COLUMNS);
+            }
+        });
+        dialog.show();
+        itemRows[0].requestFocus();
     }
 
     private void setTopMarginDp(View v, int dp) {
@@ -3386,7 +3596,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 d.setColor(0xFFFFFFFF);
                 dot.setBackground(d);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
-                lp.setMarginEnd(size);
+                if (k < count - 1) {
+                    lp.setMarginEnd(size);
+                    lp.rightMargin = size;
+                }
                 racePager.addView(dot, lp);
             }
         }
