@@ -1335,8 +1335,105 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void sleepOrIdleClock() {
         restoreSleepTimeout();
-        if (tryXiaomiSystemSleep()) return;
-        startActivity(new Intent(this, ClockActivity.class).putExtra("idle_blackout", true));
+        String action = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE)
+                .getString(Config.IDLE_ACTION_KEY, Config.IDLE_ACTION_DEFAULT);
+        switch (action) {
+            case Config.IDLE_ACTION_OFF:
+                return;
+            case Config.IDLE_ACTION_CHILL_MODE:
+                startActivity(new Intent(this, ClockActivity.class));
+                return;
+            case Config.IDLE_ACTION_BLACKOUT:
+                startActivity(new Intent(this, ClockActivity.class).putExtra("idle_blackout", true));
+                return;
+            case Config.IDLE_ACTION_STANDBY:
+                if (tryXiaomiSystemSleep()) return;
+                startActivity(new Intent(this, ClockActivity.class).putExtra("idle_blackout", true));
+                return;
+            case Config.IDLE_ACTION_POWER_OFF:
+            default:
+                if (tryXiaomiSystemPowerOff()) return;
+                if (tryXiaomiSystemSleep()) return;
+                startActivity(new Intent(this, ClockActivity.class).putExtra("idle_blackout", true));
+                return;
+        }
+    }
+
+    /**
+     * Triggers Xiaomi's native full power off sequence (identical to PhoneWindowManager.powerPress
+     * when power_key_definition == 1 on dangalFHD):
+     * 1. Blanks video output (/sys/class/video/video_global_output -> "0")
+     * 2. Stops HDCP ESM (/sys/module/tvin_hdmirx/parameters/hdcp22_kill_esm -> "1")
+     * 3. Triggers clean Android shutdown via sys.powerctl="shutdown,userrequested" and "svc power shutdown"
+     *    through mitv.internal.ITvService (running as uid 1000 system).
+     */
+    private boolean tryXiaomiSystemPowerOff() {
+        try {
+            Class<?> sm = Class.forName("android.os.ServiceManager");
+            android.os.IBinder binder = (android.os.IBinder) sm.getMethod("getService", String.class)
+                    .invoke(null, "TvService");
+            if (binder == null) return false;
+            tvServiceWriteFile(binder, "/sys/class/video/video_global_output", "0");
+            tvServiceWriteFile(binder, "/sys/module/tvin_hdmirx/parameters/hdcp22_kill_esm", "1");
+            boolean ok = tvServiceSetProperty(binder, "sys.powerctl", "shutdown,userrequested");
+            ok |= tvServiceRunCommand(binder, "svc power shutdown");
+            return ok;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static boolean tvServiceSetProperty(android.os.IBinder binder, String key, String val) {
+        android.os.Parcel data = android.os.Parcel.obtain();
+        android.os.Parcel reply = android.os.Parcel.obtain();
+        try {
+            data.writeInterfaceToken("mitv.internal.ITvService");
+            data.writeString(key);
+            data.writeString(val);
+            if (!binder.transact(1, data, reply, 0)) return false;
+            reply.readException();
+            return reply.readInt() != 0;
+        } catch (Throwable ignored) {
+            return false;
+        } finally {
+            reply.recycle();
+            data.recycle();
+        }
+    }
+
+    private static boolean tvServiceWriteFile(android.os.IBinder binder, String path, String val) {
+        android.os.Parcel data = android.os.Parcel.obtain();
+        android.os.Parcel reply = android.os.Parcel.obtain();
+        try {
+            data.writeInterfaceToken("mitv.internal.ITvService");
+            data.writeString(path);
+            data.writeString(val);
+            if (!binder.transact(2, data, reply, 0)) return false;
+            reply.readException();
+            return reply.readInt() != 0;
+        } catch (Throwable ignored) {
+            return false;
+        } finally {
+            reply.recycle();
+            data.recycle();
+        }
+    }
+
+    private static boolean tvServiceRunCommand(android.os.IBinder binder, String cmd) {
+        android.os.Parcel data = android.os.Parcel.obtain();
+        android.os.Parcel reply = android.os.Parcel.obtain();
+        try {
+            data.writeInterfaceToken("mitv.internal.ITvService");
+            data.writeString(cmd);
+            if (!binder.transact(3, data, reply, 0)) return false;
+            reply.readException();
+            return reply.readInt() != 0;
+        } catch (Throwable ignored) {
+            return false;
+        } finally {
+            reply.recycle();
+            data.recycle();
+        }
     }
 
     /**

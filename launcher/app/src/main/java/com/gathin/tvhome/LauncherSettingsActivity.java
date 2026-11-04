@@ -39,6 +39,7 @@ public final class LauncherSettingsActivity extends Activity {
     private TextView advancedChoice;
     private TextView followThemeChoice;
     private TextView openOnStartChoice;
+    private TextView idleActionChoice;
     private int columns;
     private int rowsBelowDock;
     private int dockOpacity;
@@ -147,6 +148,8 @@ public final class LauncherSettingsActivity extends Activity {
                         .show();
             }
         });
+        idleActionChoice = findViewById(R.id.idleActionChoice);
+        idleActionChoice.setOnClickListener(v -> showIdleActionPicker());
         openOnStartChoice = findViewById(R.id.openOnStartChoice);
         if (config.openOnStartChoice) {
             openOnStartChoice.setVisibility(View.VISIBLE);
@@ -157,7 +160,8 @@ public final class LauncherSettingsActivity extends Activity {
             if (!hasOnTvChoices()) return;
             choices.edit().remove("columns").remove(Config.ROWS_BELOW_DOCK_KEY).remove("animations")
                     .remove("advanced_effects").remove(Config.WALLPAPER_CHOICE_KEY)
-                    .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY).remove(OpenOnStart.KEY).commit();
+                    .remove(Config.DOCK_OPACITY_KEY).remove(Config.CLOCK_FORMAT_KEY)
+                    .remove(Config.IDLE_ACTION_KEY).remove(OpenOnStart.KEY).commit();
             Config current = Config.load(this);
             columns = current.columns;
             rowsBelowDock = current.rowsBelowDock;
@@ -217,6 +221,59 @@ public final class LauncherSettingsActivity extends Activity {
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    private static final String[] IDLE_ACTION_VALUES = {
+            Config.IDLE_ACTION_POWER_OFF,
+            Config.IDLE_ACTION_STANDBY,
+            Config.IDLE_ACTION_CHILL_MODE,
+            Config.IDLE_ACTION_BLACKOUT,
+            Config.IDLE_ACTION_OFF
+    };
+
+    private void showIdleActionPicker() {
+        String[] labels = {
+                getString(R.string.idle_action_power_off),
+                getString(R.string.idle_action_standby),
+                getString(R.string.idle_action_chill_mode),
+                getString(R.string.idle_action_blackout),
+                getString(R.string.idle_action_off)
+        };
+        String current = choices.getString(Config.IDLE_ACTION_KEY, Config.IDLE_ACTION_DEFAULT);
+        int checked = 0;
+        for (int i = 0; i < IDLE_ACTION_VALUES.length; i++) {
+            if (IDLE_ACTION_VALUES[i].equals(current)) {
+                checked = i;
+                break;
+            }
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.idle_action_label)
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    dialog.dismiss();
+                    choices.edit().putString(Config.IDLE_ACTION_KEY, IDLE_ACTION_VALUES[which]).apply();
+                    changed();
+                    refresh();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private String idleActionLabel() {
+        String action = choices.getString(Config.IDLE_ACTION_KEY, Config.IDLE_ACTION_DEFAULT);
+        switch (action) {
+            case Config.IDLE_ACTION_STANDBY:
+                return getString(R.string.idle_action_standby_short);
+            case Config.IDLE_ACTION_CHILL_MODE:
+                return getString(R.string.idle_action_chill_mode_short);
+            case Config.IDLE_ACTION_BLACKOUT:
+                return getString(R.string.idle_action_blackout_short);
+            case Config.IDLE_ACTION_OFF:
+                return getString(R.string.off);
+            case Config.IDLE_ACTION_POWER_OFF:
+            default:
+                return getString(R.string.idle_action_power_off_short);
+        }
     }
 
     /** Off, then every app with a TV entry point by name. Saved at once; it is read on the next boot. */
@@ -316,6 +373,7 @@ public final class LauncherSettingsActivity extends Activity {
                 "none".equals(wallpaperCurrent) ? getString(R.string.wallpaper_none)
                         : wallpaperCurrent != null ? wallpaperCurrent
                         : getString(R.string.wallpaper_theme_default)));
+        idleActionChoice.setText(getString(R.string.idle_action_state, idleActionLabel()));
         openOnStartChoice.setText(getString(R.string.open_on_start_state, openOnStartLabel()));
         followThemeChoice.setSelected(!hasOnTvChoices());
     }
@@ -324,7 +382,8 @@ public final class LauncherSettingsActivity extends Activity {
         return choices.contains("columns") || choices.contains(Config.ROWS_BELOW_DOCK_KEY)
                 || choices.contains("animations") || choices.contains("advanced_effects")
                 || choices.contains(Config.WALLPAPER_CHOICE_KEY) || choices.contains(Config.DOCK_OPACITY_KEY)
-                || choices.contains(Config.CLOCK_FORMAT_KEY) || choices.contains(OpenOnStart.KEY);
+                || choices.contains(Config.CLOCK_FORMAT_KEY) || choices.contains(Config.IDLE_ACTION_KEY)
+                || choices.contains(OpenOnStart.KEY);
     }
 
     private void open(Intent intent) {

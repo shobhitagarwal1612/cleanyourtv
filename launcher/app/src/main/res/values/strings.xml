@@ -64,6 +64,17 @@
     <string name="advanced_effects_state">Advanced effects: %1$s</string>
     <string name="open_on_start_label">Open on start</string>
     <string name="open_on_start_state">Open on start: %1$s</string>
+    <string name="idle_action_label" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">When Home is idle</string>
+    <string name="idle_action_state" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">When Home is idle (10 min): %1$s</string>
+    <string name="idle_action_power_off" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Full power off (&lt; 0.5W, cold boot on wake)</string>
+    <string name="idle_action_standby" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Hardware standby (&lt; 0.5W, 2s instant wake)</string>
+    <string name="idle_action_chill_mode" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Chill Mode (ambient screensaver)</string>
+    <string name="idle_action_blackout" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Screen blackout (instant any-key wake)</string>
+    <string name="idle_action_off" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Off (never auto-sleep)</string>
+    <string name="idle_action_power_off_short" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Full power off</string>
+    <string name="idle_action_standby_short" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Hardware standby</string>
+    <string name="idle_action_chill_mode_short" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Chill Mode</string>
+    <string name="idle_action_blackout_short" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Screen blackout</string>
     <string name="advanced_effects_warning">Adds a lifted tile, icon zoom and smooth colour transitions. May increase memory use; the actual difference depends on your TV.</string>
     <string name="follow_theme">Follow theme (reset on-TV choices)</string>
     <string name="follow_theme_hint">Uses the current theme or built-in layout and motion settings. Pushing or resetting a theme also clears your on-TV choices.</string>

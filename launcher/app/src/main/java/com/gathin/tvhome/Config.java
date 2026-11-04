@@ -44,6 +44,13 @@ final class Config {
     static final String WALLPAPER_CHOICE_KEY = "wallpaper_choice";
     static final String DOCK_OPACITY_KEY = "dock_opacity";
     static final String CLOCK_FORMAT_KEY = "clock_format";
+    static final String IDLE_ACTION_KEY = "idle_action";
+    static final String IDLE_ACTION_POWER_OFF = "power_off";
+    static final String IDLE_ACTION_STANDBY = "standby";
+    static final String IDLE_ACTION_CHILL_MODE = "chill_mode";
+    static final String IDLE_ACTION_BLACKOUT = "blackout";
+    static final String IDLE_ACTION_OFF = "off";
+    static final String IDLE_ACTION_DEFAULT = IDLE_ACTION_POWER_OFF;
     /**
      * Counts the changes made in Launcher settings. Home remembers the count it was built with and rebuilds on
      * resume when it differs, however the settings were left (see MainActivity#onResume).
