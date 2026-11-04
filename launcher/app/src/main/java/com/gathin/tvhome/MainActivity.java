@@ -787,8 +787,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 @Override
                 public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
                     int shift = rv.canScrollVertically(-1) ? rv.computeVerticalScrollOffset() : 0;
-                    racePanel.setTranslationY(-shift);
-                    int room = Math.max(1, racePanel.getTop() - clockBlock.getBottom());
+                    float baseOffset = (gameDay == null && dailyWhisper != null && dailyWhisper.isEnabled())
+                            ? -36f * density : 0f;
+                    racePanel.setTranslationY(baseOffset - shift);
+                    int room = Math.max(1, (int) (racePanel.getTop() + baseOffset) - clockBlock.getBottom());
                     racePanel.setAlpha(Math.max(0f, 1f - shift / (float) room));
                 }
             });
@@ -3319,12 +3321,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             racePanel.setVisibility(View.GONE);
             return;
         }
+        int shift = (grid != null && grid.canScrollVertically(-1)) ? grid.computeVerticalScrollOffset() : 0;
+        racePanel.setTranslationY(-36f * density - shift);
         int seconds = DailyWhisper.TURN_SECONDS;
         long since = SystemClock.elapsedRealtime() - rotationStart;
         int on = GameDay.current(total, since, seconds);
         if (f1 != null && on == whispers.size()) {
             raceBar.setBackgroundResource(R.drawable.race_bar);
-            raceHeadline.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 34);
+            raceHeadline.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 26);
+            setTopMarginDp(raceHeadline, 6);
+            setTopMarginDp(raceSessions, 6);
+            setTopMarginDp(racePager, 8);
             raceSessions.setVisibility(View.VISIBLE);
             updateRace();
         } else {
@@ -3333,12 +3340,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             bar.setCornerRadius(1.5f * density);
             bar.setColor(item.colour);
             raceBar.setBackground(bar);
+            raceKicker.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11);
             raceKicker.setText(item.kicker);
-            raceHeadline.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 25);
+            raceHeadline.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 21);
             raceHeadline.setText(item.headline);
+            setTopMarginDp(raceHeadline, 5);
+            setTopMarginDp(raceSessions, 4);
+            setTopMarginDp(racePager, 7);
             if (item.subline == null || item.subline.isEmpty()) {
                 raceSessions.setVisibility(View.GONE);
             } else {
+                raceSessions.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11.5f);
                 raceSessions.setText(item.subline);
                 raceSessions.setVisibility(View.VISIBLE);
             }
@@ -3346,6 +3358,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         showPager(total, on);
         if (total > 1 && !stopped) handler.postDelayed(turnTick, GameDay.delayToNextTurn(since, seconds));
+    }
+
+    private void setTopMarginDp(View v, int dp) {
+        if (v == null || !(v.getLayoutParams() instanceof LinearLayout.LayoutParams)) return;
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) v.getLayoutParams();
+        int px = Math.round(dp * density);
+        if (lp.topMargin != px) {
+            lp.topMargin = px;
+            v.setLayoutParams(lp);
+        }
     }
 
     /** One dot per turn, the one on screen bright; none for a single turn. */

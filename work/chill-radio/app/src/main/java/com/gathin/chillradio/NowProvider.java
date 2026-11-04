@@ -33,8 +33,8 @@ public final class NowProvider extends ContentProvider {
     private static final String[] COLUMNS = {"text"};
     private static final String[] WHISPER_COLUMNS = {"kind", "kicker", "headline", "subline", "colour"};
     private static final String[] RSS_URLS = {
-            "https://www.thehindu.com/news/national/feeder/default.rss",
-            "https://feeds.bbci.co.uk/news/world/asia/india/rss.xml"
+            "https://feeds.bbci.co.uk/news/world/asia/india/rss.xml",
+            "https://www.thehindu.com/feeder/default.rss"
     };
 
     private static String openMeteoUrl(Context ctx) {
@@ -325,7 +325,7 @@ public final class NowProvider extends ContentProvider {
                 String xml = httpGet(RSS_URLS[i]);
                 String title = extractFirstItemTitle(xml);
                 if (!title.isEmpty()) {
-                    String source = i == 0 ? "The Hindu" : "BBC News";
+                    String source = i == 0 ? "BBC News" : "The Hindu";
                     java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.US);
                     String subline = source + " · Updated " + sdf.format(new java.util.Date(now));
                     prefs.edit()
