@@ -24,32 +24,26 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Animated ambient canvas for Chill Mode across 11 dedicated screens:
- * - Screens 0..4: Procedural Nature scenes (Marin Sunset, Arctic Aurora, Midnight Rain, Ember Hearth, Kyoto Bamboo Zen).
- * - Screens 5..8: Dedicated Live Radio FM screens, each displaying a curated 1080p background image.
- * - Screen 9: ISS Orbital View (Earth at Night from low Earth orbit with twinkling starlight).
- * - Screen 10: The Frame Gallery (Dark Museum Masterpiece oil painting / rotating gallery with passepartout border).
+ * Animated ambient canvas for Chill Mode across 7 curated screens:
+ * - Screens 0..2: Procedural Nature scenes (Marin Sunset, Midnight Rain, Ember Hearth).
+ * - Screens 3..5: Live Radio FM screens (Groove Salad, Drone Zone, Lush Lo-Fi), each paired with a curated 1080p backdrop.
+ * - Screen 6: Deep Space FM · Earth in Orbit (ISS Earth at Night from low-Earth orbit with twinkling starlight).
  */
 final class ChillView extends View {
 
     private static final String[] SCREEN_NAMES = {
             "Marin Sunset · Ocean Waves",
-            "Arctic Aurora · Night Wind",
             "Midnight Rain · Cozy Downpour",
             "Ember Hearth · Crackling Fire",
-            "Kyoto Bamboo · Zen Garden",
             "Groove Salad FM · Chill Beats",
             "Drone Zone FM · Ambient Space",
             "Lush Lo-Fi FM · Dreamy Vocals",
-            "Deep Space FM · Cosmic Drift",
-            "ISS Orbital View · Earth at Night",
-            "The Frame Gallery · Nocturne in Gold"
+            "Deep Space FM · Earth in Orbit"
     };
 
     private static final String[] CATEGORY_NAMES = {
-            "NATURE", "NATURE", "NATURE", "NATURE", "NATURE",
-            "RADIO FM", "RADIO FM", "RADIO FM", "RADIO FM",
-            "SPACE", "GALLERY"
+            "NATURE", "NATURE", "NATURE",
+            "RADIO FM", "RADIO FM", "RADIO FM", "RADIO FM"
     };
 
     private static final long HUD_VISIBLE_MS = 6500L;
@@ -80,11 +74,8 @@ final class ChillView extends View {
     private final int screenW, screenH;
 
     private final List<File> radioImages = new ArrayList<>();
-    private final List<File> galleryImages = new ArrayList<>();
     private File orbitalFile;
-    private File museumFile;
     private final int[] stationImageIdx = new int[4];
-    private int galleryImageIdx = 0;
     private Bitmap cachedBitmap;
     private String cachedBitmapPath;
     private String loadingBitmapPath;
@@ -113,11 +104,10 @@ final class ChillView extends View {
     private Shader radioScrimShader;
 
     /**
-     * Visual presentation presets cycled via DPAD_DOWN:
+     * Clock layout presets cycled via DPAD_DOWN:
      * 0: Floating Clock (default)
-     * 1: Vinyl Turntable + Left Clock
-     * 2: Corner Pin Clock
-     * 3: Pure Canvas (No Clock)
+     * 1: Corner Pin Clock
+     * 2: Pure Canvas (No Clock)
      */
     private int viewPreset = 0;
 
@@ -150,32 +140,26 @@ final class ChillView extends View {
         hudBadge.setTextAlign(Paint.Align.CENTER);
         hudBadge.setFakeBoldText(true);
 
-        loadAndShuffleRadioImages(context);
+        loadRadioImages(context);
     }
 
-    private void loadAndShuffleRadioImages(Context context) {
+    private void loadRadioImages(Context context) {
         File dir = context.getExternalFilesDir("chill");
         if (dir != null && dir.isDirectory()) {
             File orb = new File(dir, "frame_orbital.jpg");
             if (orb.isFile()) orbitalFile = orb;
-            File mus = new File(dir, "frame_museum.jpg");
-            if (mus.isFile()) {
-                museumFile = mus;
-                galleryImages.add(mus);
-            }
             File[] files = dir.listFiles();
             if (files != null) {
                 for (File f : files) {
                     String name = f.getName();
                     if (f.isFile() && name.startsWith("radio_") && name.endsWith(".jpg")) {
                         radioImages.add(f);
-                        galleryImages.add(f);
                     }
                 }
             }
         }
+        Collections.sort(radioImages, (a, b) -> a.getName().compareTo(b.getName()));
         if (!radioImages.isEmpty()) {
-            Collections.shuffle(radioImages, new Random(SystemClock.uptimeMillis()));
             for (int i = 0; i < 4; i++) {
                 stationImageIdx[i] = i % radioImages.size();
             }
@@ -212,18 +196,11 @@ final class ChillView extends View {
         return mood;
     }
 
-    boolean isVinylLounge() {
-        return vinylLounge || viewPreset == 1;
-    }
-
     int cycleMood(int delta) {
         int len = SCREEN_NAMES.length;
         mood = (mood + delta + len) % len;
         cachedMood = -1;
         transitionStartMs = SystemClock.uptimeMillis();
-        if (ChillAudio.isSilentFrameMood(mood)) {
-            soundscape = ChillAudio.SOUNDSCAPE_OFF;
-        }
         requestBackdropForCurrentMood();
         showHud();
         invalidate();
@@ -231,14 +208,10 @@ final class ChillView extends View {
     }
 
     void shuffleCurrentBackdrop() {
-        if (ChillAudio.isRadioMood(mood) && !radioImages.isEmpty()) {
+        if (ChillAudio.isRadioMood(mood) && mood != ChillAudio.MOOD_RADIO_SPACE && !radioImages.isEmpty()) {
             int st = mood - ChillAudio.MOOD_RADIO_GROOVE;
             int n = radioImages.size();
             stationImageIdx[st] = (stationImageIdx[st] + 1) % n;
-            transitionStartMs = SystemClock.uptimeMillis();
-            requestBackdropForCurrentMood();
-        } else if (mood == ChillAudio.MOOD_FRAME_MUSEUM && galleryImages.size() > 1) {
-            galleryImageIdx = (galleryImageIdx + 1) % galleryImages.size();
             transitionStartMs = SystemClock.uptimeMillis();
             requestBackdropForCurrentMood();
         }
@@ -270,19 +243,18 @@ final class ChillView extends View {
 
     private String viewPresetLabel() {
         switch (viewPreset) {
-            case 1: return "Vinyl Deck";
-            case 2: return "Corner Clock";
-            case 3: return "Pure Canvas";
+            case 1: return "Corner Clock";
+            case 2: return "Pure Canvas";
             default: return "Floating Clock";
         }
     }
 
-    private void applyViewPreset(ClockScene scene) {
+    void applyViewPreset(ClockScene scene) {
         if (scene == null) return;
-        scene.setAvoidRightSide(isVinylLounge());
-        if (viewPreset == 2) {
+        scene.setAvoidRightSide(false);
+        if (viewPreset == 1) {
             scene.setClockStyle(ClockScene.STYLE_CORNER);
-        } else if (viewPreset == 3) {
+        } else if (viewPreset == 2) {
             scene.setClockStyle(ClockScene.STYLE_HIDDEN);
         } else {
             scene.setClockStyle(ClockScene.STYLE_FLOATING);
@@ -301,10 +273,6 @@ final class ChillView extends View {
             audioStatus = scLabel.isEmpty() ? "Live FM" : ("Live FM " + scLabel);
         } else if (!scLabel.isEmpty()) {
             audioStatus = scLabel.substring(2);
-        } else if (mood == ChillAudio.MOOD_FRAME_MUSEUM) {
-            audioStatus = "Silent Gallery";
-        } else if (mood == ChillAudio.MOOD_FRAME_ORBITAL) {
-            audioStatus = "Orbital Pad";
         } else {
             audioStatus = "Nature DSP";
         }
@@ -337,7 +305,6 @@ final class ChillView extends View {
                 return true;
             }
             // Two-Stage HUD: if the HUD pill has faded out, pressing OK or Up/Down wakes the HUD first
-            // so the user can see the current station & controls before muting or changing layers.
             if (!isHudVisible(now) && (code == KeyEvent.KEYCODE_DPAD_CENTER
                     || code == KeyEvent.KEYCODE_ENTER
                     || code == KeyEvent.KEYCODE_DPAD_UP
@@ -355,7 +322,7 @@ final class ChillView extends View {
                 return true;
             }
             if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                viewPreset = (viewPreset + 1) % 4;
+                viewPreset = (viewPreset + 1) % 3;
                 if (viewPreset == 0) {
                     shuffleCurrentBackdrop();
                 }
@@ -370,7 +337,6 @@ final class ChillView extends View {
                 handledDown = true;
                 return true;
             }
-            // Ignore unknown keys instead of hair-trigger exiting
             showHud();
             invalidate();
             handledDown = true;
@@ -389,17 +355,13 @@ final class ChillView extends View {
     }
 
     private File targetFileForMood() {
+        if (mood == ChillAudio.MOOD_RADIO_SPACE && orbitalFile != null) {
+            return orbitalFile;
+        }
         if (ChillAudio.isRadioMood(mood)) {
             if (radioImages.isEmpty()) return null;
             int idx = stationImageIdx[(mood - ChillAudio.MOOD_RADIO_GROOVE) % 4] % radioImages.size();
             return radioImages.get(idx);
-        }
-        if (mood == ChillAudio.MOOD_FRAME_ORBITAL) return orbitalFile;
-        if (mood == ChillAudio.MOOD_FRAME_MUSEUM) {
-            if (!galleryImages.isEmpty()) {
-                return galleryImages.get(galleryImageIdx % galleryImages.size());
-            }
-            return museumFile;
         }
         return null;
     }
@@ -461,10 +423,6 @@ final class ChillView extends View {
             horizonGlowShader = new RadialGradient(w * 0.58f, h * 0.55f, w * 0.46f,
                     new int[]{0x58FFA25B, 0x24FF6838, 0x00000000},
                     new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP);
-        } else if (mood == ChillAudio.MOOD_AURORA) {
-            moodBgShader = new LinearGradient(0, 0, 0, h,
-                    new int[]{0xFF030612, 0xFF071828, 0xFF0B2832, 0xFF04070E},
-                    new float[]{0f, 0.42f, 0.72f, 1f}, Shader.TileMode.CLAMP);
         } else if (mood == ChillAudio.MOOD_RAIN) {
             moodBgShader = new LinearGradient(0, 0, 0, h,
                     new int[]{0xFF060A14, 0xFF0E1728, 0xFF142034, 0xFF070B14},
@@ -473,13 +431,6 @@ final class ChillView extends View {
             moodBgShader = new LinearGradient(0, 0, 0, h,
                     new int[]{0xFF070406, 0xFF14080A, 0xFF2E0E0A, 0xFF120504},
                     new float[]{0f, 0.52f, 0.84f, 1f}, Shader.TileMode.CLAMP);
-        } else if (mood == ChillAudio.MOOD_BAMBOO) {
-            moodBgShader = new LinearGradient(0, 0, 0, h,
-                    new int[]{0xFF040B0C, 0xFF0A1C1E, 0xFF112824, 0xFF050D0B},
-                    new float[]{0f, 0.45f, 0.78f, 1f}, Shader.TileMode.CLAMP);
-            horizonGlowShader = new RadialGradient(w * 0.72f, h * 0.28f, w * 0.42f,
-                    new int[]{0x28CBE8BA, 0x1078B894, 0x00000000},
-                    new float[]{0f, 0.6f, 1f}, Shader.TileMode.CLAMP);
         } else {
             radioScrimShader = new LinearGradient(0, 0, 0, h,
                     new int[]{0x4405070E, 0x1605070E, 0x2205070E, 0x7205070E},
@@ -487,11 +438,8 @@ final class ChillView extends View {
         }
     }
 
-    private boolean vinylLounge = false;
-
     void enableVinylLounge() {
-        vinylLounge = true;
-        viewPreset = 1;
+        viewPreset = 1; // Corner Clock
         mood = ChillAudio.MOOD_RADIO_LUSH;
         cachedMood = -1;
         requestBackdropForCurrentMood();
@@ -507,24 +455,18 @@ final class ChillView extends View {
         long now = SystemClock.uptimeMillis();
         float t = (now - startMs) * 0.001f;
 
-        if (ChillAudio.isRadioMood(mood)) {
-            drawRadioScreen(canvas, w, h);
-        } else if (mood == ChillAudio.MOOD_FRAME_ORBITAL) {
+        if (mood == ChillAudio.MOOD_RADIO_SPACE) {
             drawOrbitalFrame(canvas, w, h, t);
-        } else if (mood == ChillAudio.MOOD_FRAME_MUSEUM) {
-            drawMuseumFrame(canvas, w, h);
+        } else if (ChillAudio.isRadioMood(mood)) {
+            drawRadioScreen(canvas, w, h);
         } else {
             bgPaint.setShader(moodBgShader);
             canvas.drawRect(0, 0, w, h, bgPaint);
             bgPaint.setShader(null);
             if (mood == ChillAudio.MOOD_OCEAN) {
                 drawOceanSunset(canvas, w, h, t);
-            } else if (mood == ChillAudio.MOOD_AURORA) {
-                drawAuroraNight(canvas, w, h, t);
             } else if (mood == ChillAudio.MOOD_RAIN) {
                 drawMidnightRain(canvas, w, h, t, true);
-            } else if (mood == ChillAudio.MOOD_BAMBOO) {
-                drawKyotoBamboo(canvas, w, h, t);
             } else {
                 drawEmberHearth(canvas, w, h, t, true);
             }
@@ -533,21 +475,17 @@ final class ChillView extends View {
         // Subtle Soundscape visual accompaniment (without clashing rising fire over falling rain)
         if (soundscape == ChillAudio.SOUNDSCAPE_RAIN && mood != ChillAudio.MOOD_RAIN && mood != ChillAudio.MOOD_FIREPLACE) {
             drawMidnightRain(canvas, w, h, t, false);
-        } else if (soundscape == ChillAudio.SOUNDSCAPE_BROWN && mood != ChillAudio.MOOD_AURORA && mood != ChillAudio.MOOD_FIREPLACE) {
+        } else if (soundscape == ChillAudio.SOUNDSCAPE_BROWN && mood != ChillAudio.MOOD_FIREPLACE) {
             drawOutdoorSnow(canvas, w, h, t);
         } else if (soundscape == ChillAudio.SOUNDSCAPE_HEARTH && mood != ChillAudio.MOOD_FIREPLACE && mood != ChillAudio.MOOD_RAIN) {
             drawEmberHearth(canvas, w, h, t, false);
-        } else if (soundscape == ChillAudio.SOUNDSCAPE_OFF && mood <= ChillAudio.MOOD_BAMBOO && mood != ChillAudio.MOOD_FIREPLACE) {
+        } else if (soundscape == ChillAudio.SOUNDSCAPE_OFF && mood <= ChillAudio.MOOD_RAIN) {
             int outdoorPrecip = HomeWeather.outdoorPrecipitation();
             if (outdoorPrecip == HomeWeather.PRECIP_RAIN && mood != ChillAudio.MOOD_RAIN) {
                 drawMidnightRain(canvas, w, h, t, false);
             } else if (outdoorPrecip == HomeWeather.PRECIP_SNOW) {
                 drawOutdoorSnow(canvas, w, h, t);
             }
-        }
-
-        if (isVinylLounge()) {
-            drawVinylTurntable(canvas, w, h, t);
         }
 
         // Smooth 320ms crossfade veil when switching scenes or backdrops
@@ -563,14 +501,7 @@ final class ChillView extends View {
         drawHudPill(canvas, w, h, now);
 
         if (active) {
-            boolean staticMuseum = mood == ChillAudio.MOOD_FRAME_MUSEUM
-                    && soundscape == ChillAudio.SOUNDSCAPE_OFF
-                    && !isVinylLounge()
-                    && (now - hudShownAtMs >= HUD_VISIBLE_MS)
-                    && (now - transitionStartMs >= TRANSITION_MS);
-            if (!staticMuseum) {
-                postInvalidateDelayed(33L);
-            }
+            postInvalidateDelayed(33L);
         }
     }
 
@@ -598,27 +529,6 @@ final class ChillView extends View {
         }
     }
 
-    private void drawMuseumFrame(Canvas canvas, int w, int h) {
-        if (cachedBitmap != null && !cachedBitmap.isRecycled()) {
-            dstRect.set(0, 0, w, h);
-            bgPaint.setShader(null);
-            bgPaint.setAlpha(255);
-            canvas.drawBitmap(cachedBitmap, null, dstRect, bgPaint);
-        } else {
-            canvas.drawColor(0xFF0B0A08);
-        }
-        bgPaint.setShader(radioScrimShader);
-        canvas.drawRect(0, 0, w, h, bgPaint);
-        bgPaint.setShader(null);
-
-        // Subtle dark gallery passepartout frame border
-        float pad = 22f * density;
-        pillRim.setStrokeWidth(1.5f * density);
-        pillRim.setColor(0x28D8C298);
-        dstRect.set(pad, pad, w - pad, h - pad);
-        canvas.drawRect(dstRect, pillRim);
-    }
-
     private void drawRadioScreen(Canvas canvas, int w, int h) {
         if (cachedBitmap != null && !cachedBitmap.isRecycled()) {
             dstRect.set(0, 0, w, h);
@@ -631,76 +541,6 @@ final class ChillView extends View {
         bgPaint.setShader(radioScrimShader);
         canvas.drawRect(0, 0, w, h, bgPaint);
         bgPaint.setShader(null);
-    }
-
-    private void drawVinylTurntable(Canvas canvas, int w, int h, float t) {
-        float cx = w * 0.72f;
-        float cy = h * 0.45f;
-        float rad = h * 0.24f;
-
-        particlePaint.setStyle(Paint.Style.FILL);
-        particlePaint.setColor(0x48000000);
-        canvas.drawCircle(cx, cy + 9f * density, rad * 1.08f, particlePaint);
-
-        particlePaint.setColor(0xF4101218);
-        canvas.drawCircle(cx, cy, rad, particlePaint);
-        pillRim.setColor(0x44FFFFFF);
-        pillRim.setStrokeWidth(1.5f * density);
-        canvas.drawCircle(cx, cy, rad, pillRim);
-
-        pillRim.setStrokeWidth(0.9f * density);
-        for (int g = 1; g <= 9; g++) {
-            float gr = rad * (0.38f + g * 0.062f);
-            pillRim.setColor((g % 2 == 0) ? 0x24FFFFFF : 0x12FFFFFF);
-            canvas.drawCircle(cx, cy, gr, pillRim);
-        }
-
-        // Anisotropic vinyl sheen stays fixed relative to room light while the record spins underneath
-        pillRim.setColor(0x24CBE4FF);
-        pillRim.setStrokeWidth(rad * 0.42f);
-        dstRect.set(cx - rad * 0.68f, cy - rad * 0.68f, cx + rad * 0.68f, cy + rad * 0.68f);
-        canvas.drawArc(dstRect, -28f, 42f, false, pillRim);
-        canvas.drawArc(dstRect, 152f, 42f, false, pillRim);
-
-        // True 33 1/3 RPM rotation (200 deg/sec) clearly visible via asymmetric two-tone label
-        float deg = muted ? 0f : (t * 200f) % 360f;
-        canvas.save();
-        canvas.rotate(deg, cx, cy);
-
-        float labelR = rad * 0.33f;
-        dstRect.set(cx - labelR, cy - labelR, cx + labelR, cy + labelR);
-        particlePaint.setColor(0xFFE89B48);
-        canvas.drawArc(dstRect, 0f, 180f, true, particlePaint);
-        particlePaint.setColor(0xFFC85A32);
-        canvas.drawArc(dstRect, 180f, 180f, true, particlePaint);
-
-        particlePaint.setColor(0xFF22140B);
-        canvas.drawCircle(cx, cy, labelR * 0.56f, particlePaint);
-        particlePaint.setColor(0xFFFFD28E);
-        canvas.drawCircle(cx + labelR * 0.74f, cy, 3.2f * density, particlePaint);
-
-        pillRim.setStrokeWidth(1.2f * density);
-        pillRim.setColor(0x99FFD28E);
-        canvas.drawCircle(cx, cy, labelR * 0.86f, pillRim);
-
-        particlePaint.setColor(0xFF0A0A0E);
-        canvas.drawCircle(cx, cy, rad * 0.045f, particlePaint);
-        canvas.restore();
-
-        float pivotX = cx + rad * 1.12f;
-        float pivotY = cy - rad * 0.68f;
-        particlePaint.setColor(0x44FFFFFF);
-        canvas.drawCircle(pivotX, pivotY, 14f * density, particlePaint);
-        particlePaint.setColor(0xDDCCD4E0);
-        canvas.drawCircle(pivotX, pivotY, 7f * density, particlePaint);
-        pillRim.setColor(0xEECCD6E6);
-        pillRim.setStrokeWidth(3f * density);
-        float stylusX = cx + rad * 0.66f;
-        float stylusY = cy + rad * 0.32f;
-        canvas.drawLine(pivotX, pivotY, stylusX, stylusY, pillRim);
-        particlePaint.setColor(0xFFFFB347);
-        canvas.drawCircle(stylusX, stylusY, 4.5f * density, particlePaint);
-        pillRim.setStrokeWidth(density);
     }
 
     private void drawOceanSunset(Canvas canvas, int w, int h, float t) {
@@ -749,103 +589,6 @@ final class ChillView extends View {
             pillRim.setStrokeWidth((1.2f + v * 2.4f) * density);
             pillRim.setColor((alpha << 24) | (row % 2 == 0 ? 0xFFBA70 : 0xFF8848));
             canvas.drawLine(sunX + sway - halfW, y, sunX + sway + halfW, y, pillRim);
-        }
-    }
-
-    private void drawAuroraNight(Canvas canvas, int w, int h, float t) {
-        particlePaint.setStyle(Paint.Style.FILL);
-        for (int i = 0; i < N; i++) {
-            float x = px[i] * w;
-            float y = py[i] * h * 0.70f;
-            float tw = 0.25f + 0.75f * (0.5f + 0.5f * (float) Math.sin(t * (1.1f + (i % 5) * 0.25f) + pPhase[i]));
-            int alpha = Math.round(185 * tw);
-            particlePaint.setColor((alpha << 24) | 0xE8F4FF);
-            canvas.drawCircle(x, y, pr[i] * 0.52f, particlePaint);
-        }
-
-        // Vertical aurora borealis light curtains shimmering across the arctic sky
-        glowPaint.setStyle(Paint.Style.STROKE);
-        glowPaint.setStrokeCap(Paint.Cap.ROUND);
-        for (int band = 0; band < 2; band++) {
-            int rgb = band == 0 ? 0x2AE89C : 0x24B8F0;
-            float baseY = h * (0.34f + band * 0.11f);
-            glowPaint.setStrokeWidth(18f * density);
-            for (int col = 0; col <= 44; col++) {
-                float u = col / 44f;
-                float x = u * w;
-                float wave = (float) Math.sin(u * 5.0f + t * 0.38f + band * 1.6f) * (32f * density)
-                        + (float) Math.cos(u * 2.6f - t * 0.24f) * (18f * density);
-                float curtainH = (64f + 42f * (0.5f + 0.5f * (float) Math.sin(u * 8.0f - t * 0.5f + band))) * density;
-                float intensity = 0.35f + 0.65f * (0.5f + 0.5f * (float) Math.sin(u * 3.5f + t * 0.42f + band));
-                int alpha = Math.round(34f * intensity);
-                glowPaint.setColor((alpha << 24) | rgb);
-                canvas.drawLine(x, baseY + wave, x + 6f * density, baseY + wave - curtainH, glowPaint);
-            }
-        }
-
-        // Dark arctic mountain range silhouette at the bottom
-        wavePath.reset();
-        wavePath.moveTo(0, h);
-        wavePath.lineTo(0, h * 0.82f);
-        wavePath.lineTo(w * 0.18f, h * 0.74f);
-        wavePath.lineTo(w * 0.34f, h * 0.81f);
-        wavePath.lineTo(w * 0.56f, h * 0.71f);
-        wavePath.lineTo(w * 0.77f, h * 0.80f);
-        wavePath.lineTo(w * 0.91f, h * 0.75f);
-        wavePath.lineTo(w, h * 0.82f);
-        wavePath.lineTo(w, h);
-        wavePath.close();
-        particlePaint.setColor(0xFF03060C);
-        canvas.drawPath(wavePath, particlePaint);
-    }
-
-    private void drawKyotoBamboo(Canvas canvas, int w, int h, float t) {
-        glowPaint.setStyle(Paint.Style.FILL);
-        glowPaint.setShader(horizonGlowShader);
-        glowPaint.setAlpha(220);
-        canvas.drawRect(0, 0, w, h, glowPaint);
-        glowPaint.setShader(null);
-
-        // Soft glowing moon behind the bamboo grove
-        particlePaint.setStyle(Paint.Style.FILL);
-        particlePaint.setColor(0x24D8F0D0);
-        canvas.drawCircle(w * 0.72f, h * 0.28f, 68f * density, particlePaint);
-        particlePaint.setColor(0x88EBF8E6);
-        canvas.drawCircle(w * 0.72f, h * 0.28f, 38f * density, particlePaint);
-
-        // Swaying bamboo stalks with internode rings
-        pillRim.setStrokeCap(Paint.Cap.BUTT);
-        float[] stalks = {0.09f, 0.14f, 0.21f, 0.29f, 0.78f, 0.85f, 0.91f};
-        for (int s = 0; s < stalks.length; s++) {
-            float baseX = stalks[s] * w;
-            float sway = (float) Math.sin(t * 0.55f + s * 0.9f) * (10f * density);
-            float topX = baseX + sway;
-            float thick = (5.5f + (s % 3) * 2.2f) * density;
-            int color = (s % 2 == 0) ? 0xCC16322A : 0xAA0D221C;
-            pillRim.setStrokeWidth(thick);
-            pillRim.setColor(color);
-            canvas.drawLine(baseX, h, topX, h * 0.04f, pillRim);
-
-            // Bamboo nodes
-            pillRim.setStrokeWidth(1.5f * density);
-            pillRim.setColor(0x5588C8A0);
-            for (int node = 1; node <= 5; node++) {
-                float frac = node / 6f;
-                float nx = baseX + sway * (1f - frac);
-                float ny = h * frac;
-                canvas.drawLine(nx - thick * 0.65f, ny, nx + thick * 0.65f, ny, pillRim);
-            }
-        }
-
-        // Drifting golden zen fireflies
-        particlePaint.setStyle(Paint.Style.FILL);
-        for (int i = 0; i < 28; i++) {
-            float x = ((px[i] + vx[i] * t * 12f) % 1f + 1f) % 1f * w;
-            float y = ((py[i] - vy[i] * t * 5f) % 1f + 1f) % 1f * h;
-            float glow = 0.2f + 0.8f * (0.5f + 0.5f * (float) Math.sin(t * 1.8f + pPhase[i]));
-            int alpha = Math.round(180 * glow);
-            particlePaint.setColor((alpha << 24) | (i % 3 == 0 ? 0xB8FF9E : 0xFFE680));
-            canvas.drawCircle(x, y, pr[i] * (0.65f + 0.55f * glow), particlePaint);
         }
     }
 
@@ -995,7 +738,7 @@ final class ChillView extends View {
 
         // Segmented dot indicator along bottom of pill
         int count = SCREEN_NAMES.length;
-        float dotSpacing = 11f * density;
+        float dotSpacing = 12f * density;
         float totalDotsW = (count - 1) * dotSpacing;
         float startX = w * 0.5f - totalDotsW * 0.5f;
         float dotY = top + 64f * density;

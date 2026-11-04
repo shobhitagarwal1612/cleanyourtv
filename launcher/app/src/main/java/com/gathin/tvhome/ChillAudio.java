@@ -13,28 +13,22 @@ import android.os.Looper;
 import java.util.Random;
 
 /**
- * Audio controller for Chill Mode across 11 dedicated screens + Zero-File Procedural Soundscapes:
- * - Screens 0..4: Procedural Nature Audio (Ocean Waves, Night Wind/Aurora, Cozy Downpour, Crackling Fire, Kyoto Bamboo Zen).
- * - Screens 5..8: Live Internet Radio FM stations (Groove Salad, Drone Zone, Lush, Deep Space One),
+ * Audio controller for Chill Mode across 7 curated screens + Zero-File Procedural Soundscapes:
+ * - Screens 0..2: Procedural Nature Audio (Ocean Waves, Cozy Downpour, Crackling Fire).
+ * - Screens 3..6: Live Internet Radio FM stations (Groove Salad, Drone Zone, Lush, Deep Space One),
  *   streamed via the companion com.gathin.chillradio app so the launcher keeps zero network permissions.
- * - Screen 9: ISS Orbital View (soft procedural cosmic orbital pad).
- * - Screen 10: The Frame Gallery (silent dark museum painting mode).
  * - Up/Play/Menu cycles Zero-File Stereo Procedural Soundscapes (+ Soft Rain · + Crackling Hearth · + Deep Brown Noise)
  *   which can either play standalone or layer gently underneath Live Radio FM streams ("Rain over Radio").
  */
 final class ChillAudio {
 
     static final int MOOD_OCEAN = 0;
-    static final int MOOD_AURORA = 1;
-    static final int MOOD_RAIN = 2;
-    static final int MOOD_FIREPLACE = 3;
-    static final int MOOD_BAMBOO = 4;
-    static final int MOOD_RADIO_GROOVE = 5;
-    static final int MOOD_RADIO_DRONE = 6;
-    static final int MOOD_RADIO_LUSH = 7;
-    static final int MOOD_RADIO_SPACE = 8;
-    static final int MOOD_FRAME_ORBITAL = 9;
-    static final int MOOD_FRAME_MUSEUM = 10;
+    static final int MOOD_RAIN = 1;
+    static final int MOOD_FIREPLACE = 2;
+    static final int MOOD_RADIO_GROOVE = 3;
+    static final int MOOD_RADIO_DRONE = 4;
+    static final int MOOD_RADIO_LUSH = 5;
+    static final int MOOD_RADIO_SPACE = 6;
 
     static final int SOUNDSCAPE_OFF = 0;
     static final int SOUNDSCAPE_RAIN = 1;
@@ -82,10 +76,6 @@ final class ChillAudio {
         return m >= MOOD_RADIO_GROOVE && m <= MOOD_RADIO_SPACE;
     }
 
-    static boolean isSilentFrameMood(int m) {
-        return m == MOOD_FRAME_MUSEUM;
-    }
-
     int getSoundscape() {
         return soundscape;
     }
@@ -111,9 +101,6 @@ final class ChillAudio {
 
     void setMood(int newMood) {
         mood = newMood;
-        if (isSilentFrameMood(newMood)) {
-            soundscape = SOUNDSCAPE_OFF;
-        }
         syncAudioState();
     }
 
@@ -158,7 +145,7 @@ final class ChillAudio {
     private boolean needsProceduralSynth() {
         if (!running || muted) return false;
         if (soundscape != SOUNDSCAPE_OFF) return true;
-        return !isRadioMood(mood) && !isSilentFrameMood(mood);
+        return !isRadioMood(mood);
     }
 
     private synchronized void syncAudioState() {
@@ -228,10 +215,6 @@ final class ChillAudio {
         }
     }
 
-    private static final double[] BAMBOO_FREQS = {
-            185.00, 220.00, 246.94, 277.18, 329.63, 369.99, 440.00, 554.37
-    };
-
     private void loop() {
         int minBuf = AudioTrack.getMinBufferSize(SAMPLE_RATE,
                 AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT);
@@ -262,7 +245,6 @@ final class ChillAudio {
         double lp1L = 0.0, lp2L = 0.0, brownL = 0.0, bpL = 0.0;
         double lp1R = 0.0, lp2R = 0.0, brownR = 0.0, bpR = 0.0;
         double snapEnv = 0.0, snapPan = 0.5, snapTone = 0.3;
-        double chimeEnv = 0.0, chimeFreq = 277.18, chimePan = 0.5;
         double masterGain = 0.0;
         int lastModeKey = -999;
 
@@ -295,7 +277,6 @@ final class ChillAudio {
                     lp2L += 0.022 * (lp1L - lp2L);
                     lp1R += 0.085 * (whiteR - lp1R);
                     lp2R += 0.022 * (lp1R - lp2R);
-                    // Band-passed crisp droplet/crackling texture (high-passed lp1)
                     bpL = lp1L - lp2L;
                     bpR = lp1R - lp2R;
 
@@ -314,33 +295,8 @@ final class ChillAudio {
                         double wash = 0.22 + 0.58 * w2;
                         outL = brownL * 0.36 * wash + lp2L * 0.32 * (0.3 + 0.7 * w1) + bpL * 0.24 * crest;
                         outR = brownR * 0.36 * wash + lp2R * 0.32 * (0.3 + 0.7 * w2) + bpR * 0.24 * crest;
-                    } else if (synthMode == MOOD_AURORA || synthMode == MOOD_FRAME_ORBITAL) {
-                        // Resonant nocturnal wind + warm slow-drifting fifths pad
-                        double windL = 0.55 + 0.45 * Math.sin(phase * 2.0 * Math.PI * 0.055);
-                        double windR = 0.55 + 0.45 * Math.cos(phase * 2.0 * Math.PI * 0.048);
-                        double padL = 0.38 * Math.sin(phase * 2.0 * Math.PI * 73.42)
-                                + 0.26 * Math.sin(phase * 2.0 * Math.PI * 110.00)
-                                + 0.14 * Math.sin(phase * 2.0 * Math.PI * 164.81);
-                        double padR = 0.38 * Math.sin(phase * 2.0 * Math.PI * 73.60)
-                                + 0.26 * Math.sin(phase * 2.0 * Math.PI * 110.22)
-                                + 0.14 * Math.sin(phase * 2.0 * Math.PI * 165.05);
-                        outL = brownL * 0.38 * windL + lp2L * 0.18 * windR + padL * 0.075 * windL;
-                        outR = brownR * 0.38 * windR + lp2R * 0.18 * windL + padR * 0.075 * windR;
-                    } else if (synthMode == MOOD_BAMBOO) {
-                        // Kyoto Bamboo: soft leaves rustle + sparse resonant singing-bowl chime
-                        if (chimeEnv < 0.0008 && rng.nextInt(SAMPLE_RATE * 4) == 0) {
-                            chimeEnv = 0.22 + rng.nextDouble() * 0.16;
-                            chimeFreq = BAMBOO_FREQS[rng.nextInt(BAMBOO_FREQS.length)];
-                            chimePan = 0.25 + rng.nextDouble() * 0.50;
-                        }
-                        double chime = chimeEnv * (Math.sin(phase * 2.0 * Math.PI * chimeFreq) * 0.75
-                                + Math.sin(phase * 2.0 * Math.PI * chimeFreq * 2.756) * 0.25 * chimeEnv);
-                        chimeEnv *= 0.999935;
-                        double breeze = 0.65 + 0.35 * Math.sin(phase * 2.0 * Math.PI * 0.08);
-                        outL = (lp2L * 0.20 + brownL * 0.22) * breeze + chime * (1.0 - chimePan) * 0.34;
-                        outR = (lp2R * 0.20 + brownR * 0.22) * breeze + chime * chimePan * 0.34;
                     } else if (synthMode == MOOD_RAIN) {
-                        // Organic rain: steady patter + short 3ms band-passed water droplet impacts (no sonar sine tones)
+                        // Organic rain: steady patter + short 3ms band-passed water droplet impacts
                         if (snapEnv < 0.002 && rng.nextInt(95) == 0) {
                             snapEnv = 0.22 + rng.nextDouble() * 0.32;
                             snapPan = 0.12 + rng.nextDouble() * 0.76;

@@ -57,7 +57,7 @@ public class ClockActivity extends Activity {
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT));
         scene = new ClockScene(getWindow().getDecorView());
         scene.setAmbientVisible(false);
-        scene.setAvoidRightSide(vinyl);
+        chillView.applyViewPreset(scene);
     }
 
     @Override
