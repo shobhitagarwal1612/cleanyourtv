@@ -15,7 +15,7 @@ final class Access {
     static Adb adb(boolean enabled, boolean wireless, int tcpPort) {
         if (wireless) return Adb.NETWORK;
         if (!enabled) return Adb.OFF;
-        return wireless || tcpPort > 0 ? Adb.NETWORK : Adb.USB_ONLY;
+        return tcpPort > 0 ? Adb.NETWORK : Adb.USB_ONLY;
     }
 
     static String adbValue(Adb a, boolean wireless, int tcpPort) {
@@ -43,14 +43,28 @@ final class Access {
     /** Tailscale gives each device an address in 100.64.0.0/10 (the carrier-grade NAT range). */
     static boolean tailscaleAddress(String ip) {
         if (ip == null) return false;
-        String[] p = ip.split("\\.");
-        if (p.length != 4) return false;
-        try {
-            int a = Integer.parseInt(p[0]), b = Integer.parseInt(p[1]);
-            return a == 100 && b >= 64 && b <= 127;
-        } catch (NumberFormatException e) {
-            return false;
+        int d1 = ip.indexOf('.');
+        if (d1 <= 0) return false;
+        int d2 = ip.indexOf('.', d1 + 1);
+        if (d2 <= d1 + 1) return false;
+        int d3 = ip.indexOf('.', d2 + 1);
+        if (d3 <= d2 + 1 || d3 >= ip.length() - 1 || ip.indexOf('.', d3 + 1) != -1) return false;
+        int a = octet(ip, 0, d1);
+        int b = octet(ip, d1 + 1, d2);
+        int c = octet(ip, d2 + 1, d3);
+        int d = octet(ip, d3 + 1, ip.length());
+        return a == 100 && b >= 64 && b <= 127 && c >= 0 && d >= 0;
+    }
+
+    private static int octet(String s, int start, int end) {
+        if (end - start <= 0 || end - start > 3) return -1;
+        int val = 0;
+        for (int i = start; i < end; i++) {
+            char ch = s.charAt(i);
+            if (ch < '0' || ch > '9') return -1;
+            val = val * 10 + (ch - '0');
         }
+        return val <= 255 ? val : -1;
     }
 
     static String tailscale(boolean installed, String address) {
@@ -58,3 +72,4 @@ final class Access {
         return address != null ? "Connected, " + address : "Installed, not connected";
     }
 }
+

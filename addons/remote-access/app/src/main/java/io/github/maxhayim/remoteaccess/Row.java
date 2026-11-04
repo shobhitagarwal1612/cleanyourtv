@@ -1,6 +1,8 @@
 package io.github.maxhayim.remoteaccess;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -9,6 +11,13 @@ import android.widget.TextView;
  * One settings row: a name with a line saying what it does on the left, its value on the right; OK runs it.
  */
 final class Row extends LinearLayout {
+    static final int VALUE_DEFAULT = 0xFFC9D1D9;
+    static final int VALUE_ARMED = 0xFFFF7B72;
+
+    private static final ColorStateList DESC_COLORS = new ColorStateList(
+            new int[][]{{android.R.attr.state_focused}, new int[0]},
+            new int[]{0xFFC9D1D9, 0xFF8B949E});
+
     private final TextView value;
     private final TextView desc;
 
@@ -26,14 +35,18 @@ final class Row extends LinearLayout {
 
         LinearLayout text = new LinearLayout(context);
         text.setOrientation(VERTICAL);
+        text.setDuplicateParentStateEnabled(true);
         TextView label = new TextView(context);
         label.setText(name);
         label.setTextSize(17);
         label.setTextColor(0xFFFFFFFF);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.END);
         text.addView(label);
         desc = new TextView(context);
         desc.setTextSize(12);
-        desc.setTextColor(0xFF8B949E);
+        desc.setTextColor(DESC_COLORS);
+        desc.setDuplicateParentStateEnabled(true);
         desc.setPadding(0, Math.round(2 * dp), Math.round(16 * dp), 0);
         text.addView(desc);
         setDetail(description);
@@ -41,8 +54,10 @@ final class Row extends LinearLayout {
 
         value = new TextView(context);
         value.setTextSize(17);
-        value.setTextColor(0xFFC9D1D9);
+        value.setTextColor(VALUE_DEFAULT);
         value.setGravity(Gravity.END);
+        value.setSingleLine(true);
+        value.setEllipsize(TextUtils.TruncateAt.END);
         value.setMinWidth(Math.round(90 * dp));
         addView(value, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
     }
@@ -55,4 +70,9 @@ final class Row extends LinearLayout {
     void setValue(String v) {
         value.setText(v);
     }
+
+    void setValueColor(int color) {
+        value.setTextColor(color);
+    }
 }
+

@@ -125,7 +125,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private long idleClockMs;
     /** Back on Home opens ClockActivity (config.xml, back_opens_clock). */
     private boolean backOpensClock;
-    private final Runnable showIdleClock = () -> startActivity(new Intent(this, ClockActivity.class));
+    private final Runnable showIdleClock = this::sleepOrIdleClock;
+    private final Runnable petalShowerRunnable = this::playPetalShower;
     private String liveTvAction;
     private String liveTvInputId;
     /** The app library is on (config.xml, app_library): only then can the tile menu take an app off Home. */
@@ -145,6 +146,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private FrameLayout root;
     private WallpaperPlayer wallpaperPlayer;
     private GlassView glass;
+    private GlassSound glassSound;
+    private float lastDpadDx, lastDpadDy;
     private View ambient;
     private TextView heroName;
     /** The top shelf: heroName, plus the cinematic shelf's "Last opened" line and dock position dots. */
@@ -193,6 +196,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView shamsiDate;
     /** lunar_date: the lunisolar date under the date line, and the time zone it is computed for. */
     private TextView lunarDate;
+    /** config.xml home_weather_app: the weather line under the date; null while that is empty. */
+    private HomeWeather homeWeather;
     private boolean lunar;
     private int lunarOffset;
     private TextView stats;
@@ -439,6 +444,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (festive) updateWifiLabel();
             sky.update();
             wallpaperPlayer.update();
+            if (homeWeather != null) homeWeather.onTick();
             handler.postDelayed(this, MINUTE_MS);
         }
     };
@@ -508,6 +514,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         glass = findViewById(R.id.glass);
         glass.setStyle(cfg.glassStyle);
         if (festive) glass.setAccent(festival.accentColor());
+        glassSound = new GlassSound(this);
         ambient = findViewById(R.id.ambient);
         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
         // a fade renders it into a full-screen offscreen buffer first.
@@ -515,6 +522,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ambientGlow = cfg.ambientGlow;
         glowSnap = cfg.glowSnap;
         appGlow = cfg.appGlow;
+        consumeVolumeKeys = cfg.consumeVolumeKeys;
         if (!ambientGlow) ambient.setVisibility(View.GONE);
         heroName = findViewById(R.id.heroName);
         hero = findViewById(R.id.hero);
@@ -584,6 +592,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         lunar = cfg.lunarDate;
         lunarOffset = Lunar.offsetFor(cfg.lunarUtcOffset, Locale.getDefault());
         if (lunar) lunarDate.setVisibility(View.VISIBLE);
+        homeWeather = HomeWeather.create(this, findViewById(R.id.weatherLine));
         greetingName = cfg.greetingName;
         if (cfg.dateBelowClock) moveDateBelowClock();
         if (cfg.dateBelowClock && cfg.iconOnlyButtons && !cfg.topMenu
@@ -597,11 +606,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             lunarDate.setTextSize(11f);
             date.setPadding(0, (int) (4 * density), 0, 0);
         }
+        if (getResources().getBoolean(R.bool.header_stacked) && !cfg.dateBelowClock && !shamsi) stackHeader();
         vpnApp = cfg.vpnApp;
         vpnPill = cfg.vpnPill && !cfg.topMenu;
         btnVpn = findViewById(R.id.btnVpn);
         moduleCards = cfg.moduleCards;
-        hiddenApps = new HashSet<>(cfg.hiddenApps);
+        RoomModes.getMode(this);
+        baseHiddenApps = new HashSet<>(cfg.hiddenApps);
+        hiddenApps = RoomModes.effectiveHiddenApps(baseHiddenApps);
         libraryExcludedApps = new HashSet<>(cfg.libraryExcludedApps);
 
         grid = findViewById(R.id.grid);
@@ -712,9 +724,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (MainActivity.this.dockRow && cfg.dockTitle && rowsBelowDock > 0) want = Math.max(want, (int) (AppAdapter.TITLE_ROOM_DP * density));
             // No dock to push down: the grid starts at the top, with room for the first row's zoom and glass.
             if (!MainActivity.this.dockRow) want = (int) (AppAdapter.TOP_ROOM_DP * density);
-            // A single row never shows the names under its tiles (the title above the row names the app), so the
-            // 7dp gap and 22dp label item_app.xml keeps for them would only lift the row: sit it that much lower.
-            if (singleRow && !cfg.alwaysShowNames) want += (int) (29 * density);
+            // A single row, or a dock with 0 rows below it, never shows the names under its tiles on screen, so the
+            // 7dp gap and 22dp label item_app.xml keeps for them would only lift the dock and let the next row peek up.
+            if ((singleRow || rowsBelowDock == 0) && !cfg.alwaysShowNames) want += (int) (29 * density);
             if (grid.getPaddingTop() != want) {
                 grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
                 // A vertical grid parks the dock on the new padding line by scrolling (onTileFocused); a sideways
@@ -820,7 +832,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         launcherSettingsButton = cfg.launcherSettingsButton;
         if (launcherSettingsButton) {
             ((TextView) btnSettings).setText(R.string.launcher_settings);
-            ((TextView) btnSettings).setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_home_settings_pill, 0, 0, 0);
+            Drawable settingsIcon = getDrawable(R.drawable.ic_home_settings);
+            if (settingsIcon != null) {
+                int sz = Math.round(22 * density);
+                settingsIcon.setBounds(0, 0, sz, sz);
+                ((TextView) btnSettings).setCompoundDrawablesRelative(settingsIcon, null, null, null);
+            }
         }
         btnSettings.setOnClickListener(v -> {
             if (launcherSettingsButton) startActivityForResult(
@@ -1078,6 +1095,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        restoreSleepTimeout();
+        VolumeKeys.onHomeResumed(this);
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1121,19 +1140,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         } else {
             updateWifiLabel();
             updateInputsButton();
+            updateHeadphonesPill();
             pillsShown = true;
         }
         if (showStats) startStats();
+        if (homeWeather != null) homeWeather.onResume();
         if (gameDay != null) gameDay.start();
         sky.update();
         wallpaperPlayer.start();
+        RoomModes.applyWarmthOverlay(this, root);
         handler.postDelayed(minuteTick, MINUTE_MS);
         if (festive && lamp != null) {
-            lamp.start();
+            if (btnWifi.getVisibility() == View.VISIBLE) lamp.start();
             LocalDate today = LocalDate.now();
             if (!reducedMotion && !today.equals(lastPetalShower)) {
                 lastPetalShower = today;
-                handler.postDelayed(this::playPetalShower, 450);
+                handler.postDelayed(petalShowerRunnable, 450);
             }
         }
     }
@@ -1254,7 +1276,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0);
         cards = moduleCards ? CardFeature.run(() -> Cards.discover(this, hiddenApps,
                 () -> Cards.load(Cards.storeFile(this)), leanback), none) : none;
-        adapter.reload(cards.isEmpty() ? none : CardFeature.run(() -> Cards.shown(cards), none), leanback);
+        List<ResolveInfo> visibleLeanback = leanback;
+        if (!cards.isEmpty()) {
+            Set<String> hiddenCardPkgs = new HashSet<>();
+            for (Cards.Card c : cards) {
+                if (c.state == Cards.State.HIDDEN) hiddenCardPkgs.add(c.pkg);
+            }
+            if (!hiddenCardPkgs.isEmpty()) {
+                visibleLeanback = new ArrayList<>(leanback.size());
+                for (ResolveInfo ri : leanback) {
+                    if (ri.activityInfo == null || !hiddenCardPkgs.contains(ri.activityInfo.packageName)) {
+                        visibleLeanback.add(ri);
+                    }
+                }
+            }
+        }
+        adapter.reload(cards.isEmpty() ? none : CardFeature.run(() -> Cards.shown(cards), none), visibleLeanback);
         lastFocusedKey = returnKey;
         lastFocused = returnSlot;
         packageSequence = currentPackageSequence(packageSequence);
@@ -1278,10 +1315,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
     }
 
-    /** Any key on Home restarts the countdown to the idle clock. */
+    /** Any key on Home restarts the countdown to the idle sleep/clock. */
     @Override
     public void onUserInteraction() {
         super.onUserInteraction();
+        restoreSleepTimeout();
         restartIdleClock();
     }
 
@@ -1290,10 +1328,47 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (resumed && idleClockMs > 0) root.postDelayed(showIdleClock, idleClockMs);
     }
 
+    private void sleepOrIdleClock() {
+        if (checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS)
+                == PackageManager.PERMISSION_GRANTED) {
+            try {
+                android.content.SharedPreferences sp = getSharedPreferences("idle_sleep", MODE_PRIVATE);
+                if (!sp.getBoolean("active", false)) {
+                    int curSleep = Settings.Secure.getInt(getContentResolver(), "sleep_timeout", 10800000);
+                    if (curSleep <= 15000) curSleep = 10800000;
+                    int curSaver = Settings.Secure.getInt(getContentResolver(), "screensaver_enabled", 0);
+                    sp.edit().putBoolean("active", true)
+                            .putInt("prev_sleep", curSleep)
+                            .putInt("prev_saver", curSaver)
+                            .apply();
+                }
+                Settings.Secure.putInt(getContentResolver(), "screensaver_enabled", 0);
+                Settings.Secure.putInt(getContentResolver(), "sleep_timeout", 10000);
+                return;
+            } catch (RuntimeException ignored) {
+            }
+        }
+        startActivity(new Intent(this, ClockActivity.class));
+    }
+
+    private void restoreSleepTimeout() {
+        android.content.SharedPreferences sp = getSharedPreferences("idle_sleep", MODE_PRIVATE);
+        if (!sp.getBoolean("active", false)) return;
+        int prevSleep = sp.getInt("prev_sleep", 10800000);
+        int prevSaver = sp.getInt("prev_saver", 0);
+        sp.edit().putBoolean("active", false).apply();
+        try {
+            Settings.Secure.putInt(getContentResolver(), "sleep_timeout", prevSleep);
+            Settings.Secure.putInt(getContentResolver(), "screensaver_enabled", prevSaver);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
     @Override
     protected void onPause() {
         super.onPause();
         resumed = false;
+        restoreSleepTimeout();
         // No UP reaches a paused Home, so a vendor-key hold it saw go down would still open its app later.
         // Only Home's own share is dropped: a key service that saw the same DOWN keeps its hold.
         RemoteKeys.release(this);
@@ -1307,6 +1382,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroArt.animate().cancel();
         handler.removeCallbacks(minuteTick);
         handler.removeCallbacks(openWhenOnline);
+        handler.removeCallbacks(petalShowerRunnable);
         startPending = null;   // leaving Home before the network came back: the boot's app stays closed
         stopStats();
         if (gameDay != null) gameDay.stop();
@@ -1368,10 +1444,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onDestroy();
         RemoteKeys.release(this);
         cancelHoldOk();
+        RoomModes.removeOverlays();
         if (gameDay != null) gameDay.shutdown();
         unregisterReceiver(packageReceiver);
         if (openOnStartOnWake) unregisterReceiver(wakeReceiver);
         wallpaperPlayer.close();
+        if (glassSound != null) glassSound.release();
+        if (homeWeather != null) homeWeather.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         if (tim != null) tim.unregisterCallback(inputCallback);
@@ -1379,6 +1458,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             cm.unregisterNetworkCallback(networkCallback);
             cm.unregisterNetworkCallback(vpnCallback);
         }
+    }
+
+    void playLaunchSound() {
+        if (glassSound != null) glassSound.playLaunch();
     }
 
     /**
@@ -1411,8 +1494,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * - a tile carried: arrows move it; Back (or OK) puts it down and the mode stays on for the next one.
      * Other keys (volume, Home) pass through; leaving the launcher ends the mode and saves.
      */
+    private boolean consumeVolumeKeys;
+
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (consumeVolumeKeys && VolumeKeys.handle(this, event)) return true;
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            int k = event.getKeyCode();
+            if (k == KeyEvent.KEYCODE_DPAD_LEFT) { lastDpadDx = -1f; lastDpadDy = 0f; }
+            else if (k == KeyEvent.KEYCODE_DPAD_RIGHT) { lastDpadDx = 1f; lastDpadDy = 0f; }
+            else if (k == KeyEvent.KEYCODE_DPAD_UP) { lastDpadDx = 0f; lastDpadDy = -1f; }
+            else if (k == KeyEvent.KEYCODE_DPAD_DOWN) { lastDpadDx = 0f; lastDpadDy = 1f; }
+        }
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN
         // taken after that would arm one nothing releases.
@@ -1749,7 +1842,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
         // Home screen: Back goes nowhere, unless back_opens_clock is on.
-        if (backOpensClock) startActivity(new Intent(this, ClockActivity.class));
+        if (backOpensClock) {
+            playLaunchSound();
+            startActivity(new Intent(this, ClockActivity.class));
+        }
     }
 
     // ---- glass highlight -------------------------------------------------------------------------
@@ -1846,6 +1942,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         } else {
             springX.animateToFinalPosition(x - glassScrollShiftX);
             springY.animateToFinalPosition(y - glassScrollShift);
+            if (lastDpadDx != 0f || lastDpadDy != 0f) {
+                if (glassSound != null) glassSound.playTick();
+                if (!reducedMotion) {
+                    glass.impulseLight(lastDpadDx, lastDpadDy, false);
+                }
+                lastDpadDx = 0f;
+                lastDpadDy = 0f;
+            }
         }
         View item = (View) card.getParent();
         if (dockRow && (singleRow || position < COLUMNS)) {
@@ -2232,6 +2336,68 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         else glass.setAlpha(0f);
     }
 
+    // ---- header_stacked ---------------------------------------------------------------------------------
+
+    /**
+     * One column beside the clock: the date, the weather and the stats line, all small spaced capitals in the
+     * regular face, each a step dimmer than the one above, centred on the clock with the divider at the column's
+     * height. Before, the stats sat under the clock in their own bolder sentence-case line.
+     */
+    private void stackHeader() {
+        TextView date = findViewById(R.id.date);
+        LinearLayout column = (LinearLayout) date.getParent();
+        LinearLayout row = (LinearLayout) column.getParent();
+        View divider = findViewById(R.id.clockDivider);
+        TextView weather = findViewById(R.id.weatherLine);
+        int gap = Math.round(5 * density);
+
+        headerLine(date, 13f, 0xD9FFFFFF);
+        headerLine(weather, 13f, 0xA6FFFFFF);
+        ((LinearLayout.LayoutParams) weather.getLayoutParams()).topMargin = gap;
+        ((LinearLayout.LayoutParams) lunarDate.getLayoutParams()).topMargin = gap;
+
+        ((ViewGroup) stats.getParent()).removeView(stats);
+        LinearLayout.LayoutParams statsLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        statsLp.topMargin = gap;
+        column.addView(stats, statsLp);
+        headerLine(stats, 12f, 0x73FFFFFF);
+
+        // Centred on the clock rather than sitting on its baseline: three lines are about the clock's height.
+        row.setBaselineAligned(false);
+        LinearLayout.LayoutParams columnLp = (LinearLayout.LayoutParams) column.getLayoutParams();
+        columnLp.gravity = Gravity.CENTER_VERTICAL;
+        columnLp.bottomMargin = 0;
+        column.setLayoutParams(columnLp);
+        LinearLayout.LayoutParams dividerLp = (LinearLayout.LayoutParams) divider.getLayoutParams();
+        dividerLp.gravity = Gravity.CENTER_VERTICAL;
+        dividerLp.bottomMargin = 0;
+        divider.setLayoutParams(dividerLp);
+        // The divider follows the column: two lines while the weather has not answered yet, three after.
+        column.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            int h = Math.max(Math.round(26 * density), b - t - gap);
+            if (divider.getLayoutParams().height != h) {
+                divider.getLayoutParams().height = h;
+                divider.post(divider::requestLayout);
+            }
+        });
+    }
+
+    private void headerLine(TextView line, float sp, int color) {
+        line.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+        line.setTextColor(color);
+        // Single line first: it swaps in its own transformation, which would drop the capitals set after it.
+        line.setSingleLine(true);
+        line.setAllCaps(true);
+        line.setLetterSpacing(0.14f);
+        line.setIncludeFontPadding(false);
+        try {
+            line.setTypeface(UiFont.get(this, R.string.font_regular));
+        } catch (RuntimeException ignored) {
+            // the system font is fine
+        }
+    }
+
     // ---- optional system stats (config.xml show_stats) --------------------------------------------
 
     /** Background reader. Started only while Home is resumed and show_stats is on. */
@@ -2297,9 +2463,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         StringBuilder line = new StringBuilder();
         if (cpu >= 0) line.append(getString(R.string.stats_cpu, cpu));
         long[] mem = memUsedOfTotalMb();
-        if (mem != null) appendStat(line, getString(R.string.stats_memory, mem[0], mem[1]));
-        String free = formatGb(getResources(), Environment.getDataDirectory().getFreeSpace());
-        if (!free.isEmpty()) appendStat(line, getString(R.string.stats_storage, free));
+        if (mem != null) {
+            appendStat(line, getResources().getBoolean(R.bool.stats_memory_free)
+                    ? getString(R.string.stats_memory_free, Math.max(0, mem[1] - mem[0]))
+                    : getString(R.string.stats_memory, mem[0], mem[1]));
+        }
+        if (getResources().getBoolean(R.bool.stats_storage)) {
+            String free = formatGb(getResources(), Environment.getDataDirectory().getFreeSpace());
+            if (!free.isEmpty()) appendStat(line, getString(R.string.stats_storage, free));
+        }
         return StatsText.forLocale(line.toString(), getResources().getConfiguration().getLocales().get(0));
     }
 
@@ -2412,6 +2584,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     // ---- navigation ------------------------------------------------------------------------------
 
+    private boolean onBoundaryBump() {
+        if (glassSound != null) glassSound.playBump();
+        if (animations && !reducedMotion && glassShown) {
+            glass.impulseLight(lastDpadDx, lastDpadDy, true);
+            View card = getCurrentFocus();
+            if (card != null && card.getId() == R.id.card) {
+                card.setRotationY(lastDpadDx * GlassView.TILT_DEG * 1.35f);
+                card.setRotationX(-lastDpadDy * GlassView.TILT_DEG * 1.35f);
+                card.animate().rotationX(0f).rotationY(0f).setDuration(300).start();
+            }
+        }
+        lastDpadDx = 0f;
+        lastDpadDy = 0f;
+        return true;
+    }
+
     @Override
     public boolean onTileVerticalKey(int position, int keyCode) {
         int count = adapter.appCount();
@@ -2420,14 +2608,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // One row: Up leaves for the top bar, Down has nowhere to go, and Left/Right walk the whole row,
             // stopping at its two ends (the default focus search scrolls the row to the next tile).
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return false;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) return true;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) return onBoundaryBump();
             boolean forward = rtlAppGrid ? keyCode == KeyEvent.KEYCODE_DPAD_LEFT : keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
             int last = adapter.focusablePosition(count - 1);
             if (forward && position >= last) {
-                if (adapter.isLibraryAt(count)) focusLibrary();
-                return true;
+                if (adapter.isLibraryAt(count)) {
+                    focusLibrary();
+                    return true;
+                }
+                return onBoundaryBump();
             }
-            return !forward && position == 0;
+            if (!forward && position == 0) return onBoundaryBump();
+            return false;
         }
         // Horizontal: swallow the key at a row's ends so focus never wraps to the next row or
         // escapes up into the top bar. Mid-row moves fall through to the default focus search.
@@ -2439,8 +2631,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             // In the dock, the last app is the row's end: the empty slots after it take no focus.
             int rowCount = position < COLUMNS ? Math.min(count, adapter.dockFilled()) : count;
-            return GridNavigation.atHorizontalEdge(position, rowCount, COLUMNS,
-                    rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
+            if (GridNavigation.atHorizontalEdge(position, rowCount, COLUMNS,
+                    rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT)) {
+                return onBoundaryBump();
+            }
+            return false;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
@@ -2448,15 +2643,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
             if (position >= lastRowStart) {
-                if (adapter.isLibraryAt(count)) focusLibrary();
-                return true;
+                if (adapter.isLibraryAt(count)) {
+                    focusLibrary();
+                    return true;
+                }
+                return onBoundaryBump();
             }
             target = Math.min(position + COLUMNS, count - 1);
         }
         focusTile(target);
-        // The default focus search clicks for Left/Right; Up/Down are handled here, so click for them too.
-        grid.playSoundEffect(keyCode == KeyEvent.KEYCODE_DPAD_UP
-                ? SoundEffectConstants.NAVIGATION_UP : SoundEffectConstants.NAVIGATION_DOWN);
         return true;
     }
 
@@ -2549,6 +2744,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** top_bar_apps buttons, in bar order. */
     private final List<View> topAppButtons = new ArrayList<>();
+    private TextView btnHeadphones;
+    private TextView btnRoomMode;
+    private Set<String> baseHiddenApps = Collections.emptySet();
 
     /**
      * Puts each top_bar_apps app in the top bar as a round pill with the app's own logo, left of the network pill.
@@ -2558,6 +2756,27 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ViewGroup bar = findViewById(R.id.topButtons);
         PackageManager pm = getPackageManager();
         int size = Math.round(22 * density);
+        btnHeadphones = null;
+        btnRoomMode = null;
+
+        // Add the One-Tap Room Modes preset pill (Everyday · Movie Night · Music Lounge)
+        Drawable modeIcon = getDrawable(R.drawable.ic_room_mode);
+        if (modeIcon != null) {
+            TextView modeBtn = (TextView) getLayoutInflater().inflate(R.layout.top_app_button, bar, false);
+            modeBtn.setId(View.generateViewId());
+            modeIcon.setBounds(0, 0, size, size);
+            modeBtn.setCompoundDrawablesRelative(modeIcon, null, null, null);
+            modeBtn.setSingleLine(true);
+            modeBtn.setEllipsize(TextUtils.TruncateAt.END);
+            modeBtn.setMaxWidth(Math.round(180 * density));
+            modeBtn.setContentDescription("Room Modes");
+            modeBtn.setOnClickListener(v -> showRoomModesMenu());
+            bar.addView(modeBtn, bar.indexOfChild(getResources().getBoolean(R.bool.rtl_menu_bar) ? btnVpn : btnWifi));
+            topAppButtons.add(modeBtn);
+            btnRoomMode = modeBtn;
+            updateRoomModePill();
+        }
+
         for (String pkg : packages) {
             Intent launch = pm.getLeanbackLaunchIntentForPackage(pkg);
             if (launch == null) launch = pm.getLaunchIntentForPackage(pkg);
@@ -2567,11 +2786,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 Intent custom = LaunchActions.intent(targetPackage, action);
                 return pm.resolveActivity(custom, 0) != null ? custom : null;
             });
+            boolean isHeadphones = "com.gathin.btconnect".equals(pkg);
             Drawable logo;
             CharSequence label;
             try {
                 ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
-                logo = info.loadIcon(pm);
+                logo = isHeadphones ? getDrawable(R.drawable.ic_headphones) : info.loadIcon(pm);
                 label = info.loadLabel(pm);
             } catch (PackageManager.NameNotFoundException e) {
                 continue;
@@ -2581,7 +2801,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             button.setId(View.generateViewId());
             logo.setBounds(0, 0, size, size);
             button.setCompoundDrawablesRelative(logo, null, null, null);
-            button.setCompoundDrawableTintList(null);
+            if (!isHeadphones) {
+                button.setCompoundDrawableTintList(null);
+            } else {
+                button.setSingleLine(true);
+                button.setEllipsize(TextUtils.TruncateAt.END);
+                button.setMaxWidth(Math.round(180 * density));
+                btnHeadphones = button;
+            }
             button.setContentDescription(label);
             Intent target = launch;
             button.setOnClickListener(v -> open(new Intent(target)));
@@ -2589,6 +2816,134 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             bar.addView(button, bar.indexOfChild(getResources().getBoolean(R.bool.rtl_menu_bar) ? btnVpn : btnWifi));
             topAppButtons.add(button);
         }
+    }
+
+    private static final ColorStateList ROOM_MODE_ACTIVE_TINT = new ColorStateList(
+            new int[][]{{android.R.attr.state_focused}, {}},
+            new int[]{0xFF0B0D13, 0xFFFFB347}
+    );
+
+    private void applyExpandablePillState(TextView btn, String text, ColorStateList activeTint) {
+        if (btn == null) return;
+        ViewGroup.LayoutParams lp = btn.getLayoutParams();
+        if (text != null && !text.isEmpty()) {
+            btn.setText(text);
+            btn.setCompoundDrawablePadding(Math.round(8 * density));
+            btn.setCompoundDrawableTintList(activeTint);
+            lp.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+            btn.setLayoutParams(lp);
+            int hPad = Math.round(14 * density);
+            btn.setPaddingRelative(hPad, 0, hPad, 0);
+        } else {
+            btn.setText(null);
+            btn.setCompoundDrawablePadding(0);
+            btn.setCompoundDrawableTintList(btn.getTextColors());
+            lp.width = Math.round(42 * density);
+            btn.setLayoutParams(lp);
+            int pad = Math.round(10 * density);
+            btn.setPaddingRelative(pad, 0, pad, 0);
+        }
+    }
+
+    private void updateRoomModePill() {
+        applyExpandablePillState(btnRoomMode,
+                RoomModes.isMovieNight() ? "Movie Night" : null,
+                ROOM_MODE_ACTIVE_TINT);
+    }
+
+    private void showRoomModesMenu() {
+        if (btnRoomMode == null) return;
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+        PopupWindow popup = glassPopup(panel, (int) (260 * density));
+        int current = RoomModes.getMode(this);
+        addRoomModeRow(rows, popup, "Everyday", "Standard", current == RoomModes.MODE_EVERYDAY,
+                () -> applyRoomMode(RoomModes.MODE_EVERYDAY));
+        addRoomModeRow(rows, popup, "Movie Night", "2700K · Cinema", current == RoomModes.MODE_MOVIE_NIGHT,
+                () -> applyRoomMode(RoomModes.MODE_MOVIE_NIGHT));
+        addRoomModeRow(rows, popup, "Music Lounge", "Vinyl · Lo-Fi", false,
+                () -> applyRoomMode(RoomModes.MODE_MUSIC_LOUNGE));
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        popup.setWidth(Math.max((int) (260 * density), panel.getMeasuredWidth()));
+        dropIn(popup, panel, btnRoomMode, getResources().getBoolean(R.bool.rtl_menu_bar) ? Gravity.START : Gravity.END);
+        int focusIdx = current == RoomModes.MODE_MOVIE_NIGHT ? 1 : 0;
+        rows.getChildAt(focusIdx).requestFocus();
+    }
+
+    private void addRoomModeRow(LinearLayout rows, PopupWindow popup, String title, String subtitle,
+                                boolean active, Runnable action) {
+        View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
+        row.findViewById(R.id.icon).setVisibility(View.GONE);
+        row.findViewById(R.id.dot).setVisibility(active ? View.VISIBLE : View.GONE);
+        TextView status = row.findViewById(R.id.status);
+        status.setText(subtitle);
+        status.setVisibility(View.VISIBLE);
+        ((TextView) row.findViewById(R.id.title)).setText(title);
+        row.setOnClickListener(v -> {
+            popup.dismiss();
+            action.run();
+        });
+        final boolean[] pressed = {false};
+        row.setOnKeyListener((v, code, event) -> {
+            if (code != KeyEvent.KEYCODE_DPAD_CENTER && code != KeyEvent.KEYCODE_ENTER) return false;
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (event.getRepeatCount() == 0) pressed[0] = true;
+                return true;
+            }
+            boolean activate = pressed[0];
+            pressed[0] = false;
+            if (activate) {
+                popup.dismiss();
+                action.run();
+            }
+            return true;
+        });
+        rows.addView(row);
+    }
+
+    private void applyRoomMode(int mode) {
+        if (mode == RoomModes.MODE_MUSIC_LOUNGE) {
+            startActivity(new Intent(this, ClockActivity.class).putExtra("vinyl_lounge", true));
+            return;
+        }
+        RoomModes.setMode(this, mode);
+        RoomModes.applyWarmthOverlay(this, root);
+        hiddenApps = RoomModes.effectiveHiddenApps(baseHiddenApps);
+        adapter.setHiddenApps(hiddenApps);
+        reloadTiles();
+        restoreFocus();
+        updateRoomModePill();
+        if (mode == RoomModes.MODE_MOVIE_NIGHT) {
+            RoomModes.autoConnectHeadphones(this, () -> handler.postDelayed(this::updateHeadphonesPill, 2200));
+        }
+    }
+
+    private void updateHeadphonesPill() {
+        TextView btn = btnHeadphones;
+        if (btn == null) return;
+        new Thread(() -> {
+            String name = "";
+            int battery = -1;
+            try (android.database.Cursor c = getContentResolver().query(
+                    Uri.parse("content://com.gathin.btconnect.status/now"), null, null, null, null)) {
+                if (c != null && c.moveToFirst()) {
+                    int ni = c.getColumnIndex("name");
+                    int bi = c.getColumnIndex("battery");
+                    if (ni >= 0 && !c.isNull(ni)) name = c.getString(ni).trim();
+                    if (bi >= 0 && !c.isNull(bi)) battery = c.getInt(bi);
+                }
+            } catch (Exception ignored) {
+            }
+            String finalName = name;
+            int finalBat = battery;
+            handler.post(() -> {
+                if (isDestroyed() || btnHeadphones != btn) return;
+                String label = !finalName.isEmpty()
+                        ? (finalBat >= 0 ? (finalName + " · " + finalBat + "%") : finalName)
+                        : null;
+                applyExpandablePillState(btn, label, getColorStateList(R.color.pill_icon_online));
+            });
+        }).start();
     }
 
     @Override public void onLibraryUp() {
@@ -2895,6 +3250,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     if (isDestroyed()) return;
                     updateWifiLabel();
                     updateInputsButton();
+                    updateHeadphonesPill();
+                    handler.postDelayed(() -> {
+                        if (!isDestroyed()) updateHeadphonesPill();
+                    }, 2500);
                 });
                 return true;
             }
@@ -3665,7 +4024,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         addInputRow(rows, popup, R.drawable.ic_swap_vert, getString(R.string.reorder), -1, this::toggleReorder);
         if (launcherSettingsButton) {
-            addInputRow(rows, popup, R.drawable.ic_home_settings_pill, getString(R.string.launcher_settings), -1,
+            addInputRow(rows, popup, R.drawable.ic_home_settings, getString(R.string.launcher_settings), -1,
                     () -> startActivityForResult(new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
         } else {
             addInputRow(rows, popup, R.drawable.ic_settings, getString(R.string.settings), -1,

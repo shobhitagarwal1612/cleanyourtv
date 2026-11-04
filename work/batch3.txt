@@ -1,0 +1,4 @@
+# Batch 3: Mi Cast / Miracast (Chromecast built-in is kept)
+com.mitv.milinkservice
+com.xiaomi.mitv.smartshare
+com.xiaomi.wfdsinkhelperservice

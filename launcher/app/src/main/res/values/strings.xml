@@ -41,6 +41,7 @@
     <string name="stats_cpu">CPU %1$d%%</string>
     <string name="stats_memory">Memory %1$d / %2$d MB</string>
     <string name="stats_storage">Storage %1$s free</string>
+    <string name="stats_memory_free" xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">Memory %1$d MB free</string>
     <string name="storage_gb_whole">%1$.0f GB</string>
     <string name="storage_gb_decimal">%1$.1f GB</string>
     <string name="dream_name">Clock</string>

@@ -198,7 +198,7 @@ public class HomeKeyService extends AccessibilityService {
         homeLongPressHome = config.homeLongPressHome;
         frontAppKeys = RemoteKeys.parseFrontAppKeys(config.appKeys);
         frontAppScancodes = RemoteKeys.parseFrontAppScancodes(config.appKeys);
-        boolean watchFront = !frontAppKeys.isEmpty() || !frontAppScancodes.isEmpty();
+        boolean watchFront = !frontAppKeys.isEmpty() || !frontAppScancodes.isEmpty() || consumeVolumeKeys;
         stockHome.clear();
         stockHomePackage = config.stockHomeRedirect;
         if (!config.stockHomeRedirect.isEmpty()) {
@@ -303,13 +303,17 @@ public class HomeKeyService extends AccessibilityService {
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
-        // app_keys "front:" entries: only activities count, so a toast or the volume bar doesn't change the app in front.
-        if ((!frontAppKeys.isEmpty() || !frontAppScancodes.isEmpty())
+        // app_keys "front:" entries & per-app volume memory: only activities count, so a toast or the volume bar doesn't change the app in front.
+        if ((!frontAppKeys.isEmpty() || !frontAppScancodes.isEmpty() || consumeVolumeKeys)
                 && event.getPackageName() != null && event.getClassName() != null) {
             try {
                 ComponentName window = new ComponentName(event.getPackageName().toString(), event.getClassName().toString());
                 getPackageManager().getActivityInfo(window, 0);
+                String oldPkg = frontPackage;
                 frontPackage = window.getPackageName();
+                if (consumeVolumeKeys && !frontPackage.equals(oldPkg)) {
+                    VolumeKeys.onAppChanged(this, oldPkg, frontPackage);
+                }
             } catch (PackageManager.NameNotFoundException notAnActivity) {
                 // a dialog, panel or overlay: the app under it is still in front
             }
@@ -359,6 +363,12 @@ public class HomeKeyService extends AccessibilityService {
     /** The settings menu offers Restart only while this helper is bound: it opens the system power menu. */
     static boolean canOpenPowerMenu() {
         return running != null;
+    }
+
+    /** Returns the bound AccessibilityService context for TYPE_ACCESSIBILITY_OVERLAY windows, or fallback. */
+    static Context overlayContext(Context fallback) {
+        HomeKeyService service = running;
+        return service != null ? service : fallback;
     }
 
     /** The system power menu (Restart, and Power off where the firmware has it); the TV asks before it acts. */

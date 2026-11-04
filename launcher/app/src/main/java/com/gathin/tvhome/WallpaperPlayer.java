@@ -61,9 +61,12 @@ final class WallpaperPlayer {
     private final String latitude, longitude;
     private LocalDate sunDay;
     private int[] sun;
+    /** config.xml system_wallpaper: the context to copy the shown picture to the system wallpaper with, else null. */
+    private final Context systemWallpaper;
 
     WallpaperPlayer(Context context, FrameLayout root, Config config) {
         this.root = root;
+        systemWallpaper = SystemWallpaper.enabled(context) ? context.getApplicationContext() : null;
         backgroundColor = config.backgroundColor;
         files = new ArrayList<>(config.wallpapers);
         interval = config.wallpaperRotationMinutes * 60_000L;
@@ -96,6 +99,12 @@ final class WallpaperPlayer {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             showFirst();
         }
+        if (displayed.isEmpty()) syncSystemWallpaper(null);
+    }
+
+    private void syncSystemWallpaper(File picture) {
+        if (systemWallpaper == null) return;
+        SystemWallpaper.sync(systemWallpaper, picture, backgroundColor, dimColor, width, height, decoder);
     }
 
     /**
@@ -116,6 +125,7 @@ final class WallpaperPlayer {
                 root.setBackground(null);
                 displayed = first.getName();
                 showCaption(false);
+                syncSystemWallpaper(first);
                 if (!displayed.equals(previous)) {
                     preferences.edit().putString("image", displayed)
                             .putLong("changed", System.currentTimeMillis()).apply();
@@ -195,6 +205,7 @@ final class WallpaperPlayer {
                 show(bitmap);
                 displayed = next.getName();
                 showCaption(true);
+                syncSystemWallpaper(next);
                 if (!displayed.equals(previous) || changed == 0) {
                     preferences.edit().putString("image", displayed)
                             .putLong("changed", System.currentTimeMillis()).apply();

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Bluetooth Connect, install it on the TV and let it switch its own key service on.
+# Build Bluetooth Connect, install it on the TV, grant BLUETOOTH_CONNECT, and open it.
 #   TV_HOST=<tv ip> addons/bluetooth-connect/install.sh
 set -euo pipefail
 : "${TV_HOST:?set TV_HOST to the TV IP address}"

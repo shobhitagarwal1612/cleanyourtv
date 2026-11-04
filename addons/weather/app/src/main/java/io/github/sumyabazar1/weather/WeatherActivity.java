@@ -119,6 +119,7 @@ public final class WeatherActivity extends Activity {
                     lastReport = result;
                     updatedAt = new Date();
                     show(result);
+                    NowProvider.store(this, place, result);
                 }
                 else if (!shown) message.setText(R.string.offline);
                 main.postDelayed(tick, result != null ? Forecast.REFRESH_MS : Forecast.RETRY_MS);

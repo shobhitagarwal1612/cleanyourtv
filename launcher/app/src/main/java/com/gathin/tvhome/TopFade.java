@@ -2,6 +2,7 @@ package com.gathin.tvhome;
 
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
@@ -23,11 +24,14 @@ final class TopFade extends RecyclerView.ItemDecoration {
 
     private final float length;
     private final Paint paint = new Paint();
+    private final Shader shader = new LinearGradient(0f, 0f, 0f, 1f, 0xFF000000, 0x00000000, Shader.TileMode.CLAMP);
+    private final Matrix shaderMatrix = new Matrix();
     private float shaderHeight = -1f;
 
     private TopFade(float length) {
         this.length = length;
         paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
+        paint.setShader(shader);
     }
 
     static void attach(RecyclerView grid, float length) {
@@ -45,7 +49,8 @@ final class TopFade extends RecyclerView.ItemDecoration {
         float fade = height(parent.computeVerticalScrollOffset(), length);
         if (fade <= 0f) return;
         if (fade != shaderHeight) {
-            paint.setShader(new LinearGradient(0f, 0f, 0f, fade, 0xFF000000, 0x00000000, Shader.TileMode.CLAMP));
+            shaderMatrix.setScale(1f, fade);
+            shader.setLocalMatrix(shaderMatrix);
             shaderHeight = fade;
         }
         c.drawRect(0f, 0f, parent.getWidth(), fade, paint);

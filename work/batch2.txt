@@ -1,0 +1,3 @@
+# Batch 2: PatchWall and Xiaomi sponsored content
+com.mitv.tvhome.atv                         # PatchWall
+com.mitv.tvhome.mitvplus                    # Xiaomi TV+ sponsored live channels

@@ -50,6 +50,7 @@ final class ClockScene {
     private boolean wallpaperShown;
     /** clock_wallpaper: the picture start() decodes, its darkening, and the resources to draw it with. */
     private File wallpaperFile;
+    private Bitmap wallpaperBitmap;
     private int wallpaperShade;
     private Resources wallpaperRes;
     /** One number per decode request: a result whose number is no longer the current one is dropped. Main thread only. */
@@ -61,6 +62,7 @@ final class ClockScene {
     private String order;
     private Map<String, Set<String>> moods;
     private String latitude, longitude;
+    private boolean avoidRightSide;
 
     private final Runnable tick = new Runnable() {
         @Override
@@ -85,6 +87,17 @@ final class ClockScene {
         setGlow(PALETTE[colorIndex]);
     }
 
+    void setAvoidRightSide(boolean avoid) {
+        if (this.avoidRightSide != avoid) {
+            this.avoidRightSide = avoid;
+            placeClock();
+        }
+    }
+
+    void setAmbientVisible(boolean visible) {
+        ambient.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
     void start() {
         content.setAlpha(0f);
         content.post(() -> {
@@ -93,13 +106,28 @@ final class ClockScene {
         });
         handler.removeCallbacks(tick);
         handler.postDelayed(tick, MOVE_MS);
-        if (wallpaperFile != null && !wallpaperShown) loadWallpaper();
+        if (wallpaperFile != null && !wallpaperShown && ambient.getVisibility() == View.VISIBLE) {
+            loadWallpaper();
+        }
     }
 
     void stop() {
         handler.removeCallbacksAndMessages(null);   // the tick and any glow steps still queued
         content.animate().cancel();
         wallpaperGeneration++;   // a decode still running must not attach its picture to a stopped scene
+        ambient.setImageDrawable(null);
+        if (wallpaperBitmap != null) {
+            wallpaperBitmap.recycle();
+            wallpaperBitmap = null;
+        }
+        wallpaperShown = false;
+    }
+
+    void useHomeWallpaper(Context ctx) {
+        try {
+            useHomeWallpaper(ctx, Config.load(ctx));
+        } catch (RuntimeException ignored) {
+        }
     }
 
     /**
@@ -109,13 +137,8 @@ final class ClockScene {
      * the glow stays.
      * Call before start(), which starts the decode (again after a stop() that dropped an unfinished one).
      */
-    void useHomeWallpaper(Context ctx) {
-        Config cfg;
-        try {
-            cfg = Config.load(ctx);
-        } catch (RuntimeException e) {
-            return;
-        }
+    void useHomeWallpaper(Context ctx, Config cfg) {
+        if (cfg == null) return;
         if (!cfg.clockWallpaper) {
             // clock_glow false: plain black behind the clock (OLED); the clock itself still moves every minute.
             if (!cfg.clockGlow) {
@@ -163,6 +186,10 @@ final class ClockScene {
                     bmp.recycle();   // stopped meanwhile (or already shown): this picture was never attached
                     return;
                 }
+                if (wallpaperBitmap != null && wallpaperBitmap != bmp) {
+                    wallpaperBitmap.recycle();
+                }
+                wallpaperBitmap = bmp;
                 wallpaperShown = true;
                 // As the image, not the background: a background is stretched to the view, so a picture of
                 // another shape than the screen would be distorted. centerCrop scales and crops it like Home.
@@ -200,6 +227,7 @@ final class ClockScene {
 
     /** Step to the next picture once its turn is up; the tick already runs every minute. */
     private void advanceWallpaper() {
+        if (ambient.getVisibility() != View.VISIBLE) return;
         if (rotation == null || rotationMs <= 0 || rotation.size() < 2) return;
         shownMs += MOVE_MS;
         if (shownMs < rotationMs) return;
@@ -229,13 +257,15 @@ final class ClockScene {
         }).start();
     }
 
-    /** A random spot that keeps the whole clock on screen, with the glow centred behind it. */
+    /** A random spot that keeps the whole clock on screen and clear of the HUD pill and Vinyl Turntable. */
     private void placeClock() {
         View parent = (View) content.getParent();
+        if (parent == null) return;
         int maxX = Math.max(0, parent.getWidth() - content.getWidth());
         int maxY = Math.max(0, parent.getHeight() - content.getHeight());
-        float x = maxX * (0.1f + 0.8f * random.nextFloat());
-        float y = maxY * (0.1f + 0.8f * random.nextFloat());
+        float xSpan = avoidRightSide ? 0.32f : 0.8f;
+        float x = maxX * (0.08f + xSpan * random.nextFloat());
+        float y = maxY * (0.08f + 0.64f * random.nextFloat());
         content.setX(x);
         content.setY(y);
         if (parent.getWidth() > 0 && parent.getHeight() > 0) {
@@ -245,7 +275,7 @@ final class ClockScene {
     }
 
     private void shiftGlow() {
-        if (wallpaperShown) return;
+        if (wallpaperShown || ambient.getVisibility() != View.VISIBLE) return;
         int from = glowColor;
         colorIndex = (colorIndex + 1) % PALETTE.length;
         int to = PALETTE[colorIndex];

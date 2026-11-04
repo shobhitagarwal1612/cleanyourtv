@@ -1,0 +1,57 @@
+{
+  "dock_apps": [
+    "com.netflix.ninja",
+    "com.amazon.amazonvideo.livingroom",
+    "com.google.android.youtube.tv",
+    "in.startv.hotstar"
+  ],
+  "columns": 4,
+  "rows_below_dock": 0,
+  "background_color": "#09080C",
+  "wallpaper": true,
+  "wallpaper_rotation_minutes": 60,
+  "wallpaper_order": "sequential",
+  "wallpaper_captions": false,
+  "wallpaper_dim": 0,
+  "show_stats": false,
+  "clock_24h": "24",
+  "cinematic_home": true,
+  "cinematic_art": 0,
+  "cinematic_scrim": 15,
+  "ambient_glow": false,
+  "dock_glass": true,
+  "dock_even_padding": true,
+  "icon_only_buttons": true,
+  "icon_only_inputs": true,
+  "wifi_status_color": true,
+  "app_glow": true,
+  "glow_style": "horizon",
+  "focus_overshoot": false,
+  "advanced_effects": true,
+  "sky_intensity": 50,
+  "back_opens_clock": true,
+  "home_idle_clock_minutes": 4,
+  "wallpaper_moods": {
+    "morning": ["02-aerial-dawn.jpg", "03-aerial-day.jpg"],
+    "evening": ["01-marin-headlands-sunset.jpg"],
+    "night": ["01-marin-headlands-sunset.jpg", "04-aerial-midnight-aurora.jpg"]
+  },
+  "app_banners": [
+    "com.netflix.ninja=banner_netflix",
+    "com.amazon.amazonvideo.livingroom=banner_prime",
+    "com.google.android.youtube.tv=banner_youtube",
+    "in.startv.hotstar=banner_hotstar",
+    "org.smarttube.stable=banner_smarttube",
+    "com.sonyliv=banner_sonyliv",
+    "com.android.vending=banner_playstore",
+    "com.xiaomi.mitv.mediaexplorer=banner_media",
+    "com.cybercat.adbappcontrol.tv=banner_adb"
+  ],
+  "top_bar_apps": [
+    "com.gathin.btconnect"
+  ],
+  "key_filter": false,
+  "consume_volume_keys": false,
+  "latitude": "12.97",
+  "longitude": "77.59"
+}

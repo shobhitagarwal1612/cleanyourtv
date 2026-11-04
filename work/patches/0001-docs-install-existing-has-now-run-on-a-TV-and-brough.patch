@@ -1,0 +1,37 @@
+From d5776f0d6a584d870a1d291530e5cbb604e88721 Mon Sep 17 00:00:00 2001
+From: Shobhit Agarwal <ashobhit@google.com>
+Date: Mon, 2 Nov 2026 15:50:27 +0530
+Subject: [PATCH] docs: install-existing has now run on a TV, and brought back
+ the HDMI handler and the app-button receiver
+
+A Mi TV 4A Pro (MiTV-AXSO0, Android TV 9, PI.6036) that ADB AppControl had stripped of 27 packages got
+com.android.tv and partnercustomizer back enabled from the system partition: Settings > Inputs and the
+remote's Netflix and Prime Video buttons worked again.
+---
+ docs/TROUBLESHOOTING.md | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/docs/TROUBLESHOOTING.md b/docs/TROUBLESHOOTING.md
+index e843cc07..ff8b39f2 100644
+--- a/docs/TROUBLESHOOTING.md
++++ b/docs/TROUBLESHOOTING.md
+@@ -310,7 +310,15 @@ Things that bit us or contributors, so they don't bite you. Commands use `tools/
+   "not installed any more". Bring it back with
+   `tools/tv.py 'cmd package install-existing --user 0 <package>'` (AOSP's `cmd package` has it from
+   Android 8.0; the Android 6 set in [#1185](https://github.com/Gathin23/cleanyourtv/issues/1185) had no
+-  such command; no TV here has run it yet). It comes back without its data unless the uninstall used
++  such command). A Xiaomi Mi TV 4A Pro (MiTV-AXSO0, Android TV 9, `PI.6036`) that ADB AppControl had
++  stripped of 27 packages ran it: it answered `Package <package> installed for user: 0`, and the package
++  came back enabled (`enabled=0` on the `User 0:` line), from the system partition, nothing downloaded. Two of
++  the 27 were why the set looked broken before any list was applied: `com.android.tv`, without which
++  Settings > Inputs opened nothing for HDMI, and `com.xiaomi.android.tvsetup.partnercustomizer`, the
++  global-key receiver for the remote's Netflix and Prime Video buttons
++  ([the AXSO0 list](../examples/xiaomi-mitv-axso0/debloat.txt) keeps both). So on a set that came pre-stripped,
++  compare `pm list packages -u` with `pm list packages` before blaming the list for a dead input or button. It
++  comes back without its data unless the uninstall used
+   `-k`, and disabled if a list that names it has gone through `disable.sh` since it was removed: that
+   run sent it `pm disable-user --user 0`, which AOSP applies to a package removed for user 0 too (the
+   [Shield list](../examples/nvidia-shield-tv-pro-2019/debloat.txt) notes `disable.sh` reporting
+-- 
+2.56.0.317.g454f8302e1-goog
+

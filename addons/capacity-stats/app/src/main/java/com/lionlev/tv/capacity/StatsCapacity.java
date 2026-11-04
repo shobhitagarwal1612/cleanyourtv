@@ -4,6 +4,9 @@ import java.util.Locale;
 
 /** Available/total, with one unit shared by both values. Never invent a missing total. */
 final class StatsCapacity {
+    private StatsCapacity() {
+    }
+
     static String memory(long availableMb, long totalMb) {
         if (availableMb < 0) return "";
         return Long.toString(availableMb) + (totalMb > 0 ? "/" + totalMb : "");
@@ -15,3 +18,4 @@ final class StatsCapacity {
         return available + (totalBytes > 0 ? "/" + String.format(Locale.US, "%.1f", totalBytes / unit) : "") + " GB";
     }
 }
+

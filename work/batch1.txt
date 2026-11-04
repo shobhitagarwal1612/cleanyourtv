@@ -1,0 +1,3 @@
+# Batch 1: Google recommendation feeds (sponsored rows on the stock home)
+com.google.android.tvrecommendations
+com.google.android.leanbacklauncher.recommendations

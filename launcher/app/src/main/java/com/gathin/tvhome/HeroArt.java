@@ -15,6 +15,8 @@ import android.graphics.drawable.Drawable;
 final class HeroArt {
     static final int W = 48, H = 27;
     private static final float SATURATION = 1.7f;
+    private static final int[] BUF_A = new int[W * H];
+    private static final int[] BUF_B = new int[W * H];
 
     private HeroArt() {
     }
@@ -33,22 +35,47 @@ final class HeroArt {
         d.setBounds(saved);
         // Halve twice: each filtered halving averages 2×2 pixels, where one 4× step would skip most of them.
         Bitmap half = Bitmap.createScaledBitmap(big, W * 2, H * 2, true);
-        big.recycle();
+        if (half != big) big.recycle();
         Bitmap small = Bitmap.createScaledBitmap(half, W, H, true);
-        half.recycle();
+        if (small != half) half.recycle();
 
-        int[] px = new int[W * H];
+        int[] px = BUF_A;
+        int[] scratch = BUF_B;
         small.getPixels(px, 0, W, 0, 0, W, H);
         saturate(px);
         // Three box passes approximate a gaussian, so the stretched image shows no seams between pixels.
         for (int pass = 0; pass < 3; pass++) {
-            px = boxBlur(px, W, H, 2, true);
-            px = boxBlur(px, W, H, 2, false);
+            boxBlur(px, scratch, W, H, 2, true);
+            boxBlur(scratch, px, W, H, 2, false);
         }
+        dither(px, W, H);
         Bitmap out = small.isMutable() ? small : small.copy(Bitmap.Config.ARGB_8888, true);
         if (out != small) small.recycle();
         out.setPixels(px, 0, W, 0, 0, W, H);
         return out;
+    }
+
+    private static final int[] BAYER_4X4 = {
+         0,  8,  2, 10,
+        12,  4, 14,  6,
+         3, 11,  1,  9,
+        15,  7, 13,  5
+    };
+
+    /** Ordered 4x4 Bayer dither (±2 LSB) to prevent 8-bit Mach banding when stretched 40x across 1080p. */
+    private static void dither(int[] px, int w, int h) {
+        for (int y = 0; y < h; y++) {
+            int rowOff = (y & 3) << 2;
+            for (int x = 0; x < w; x++) {
+                int i = y * w + x;
+                int p = px[i];
+                float delta = (BAYER_4X4[rowOff | (x & 3)] - 7.5f) * 0.25f;
+                px[i] = Color.rgb(
+                        clamp(Color.red(p) + delta),
+                        clamp(Color.green(p) + delta),
+                        clamp(Color.blue(p) + delta));
+            }
+        }
     }
 
     private static void saturate(int[] px) {
@@ -66,8 +93,7 @@ final class HeroArt {
     }
 
     /** One box blur pass along rows (horizontal) or columns, edges clamped. */
-    private static int[] boxBlur(int[] src, int w, int h, int radius, boolean horizontal) {
-        int[] dst = new int[src.length];
+    private static void boxBlur(int[] src, int[] dst, int w, int h, int radius, boolean horizontal) {
         int lines = horizontal ? h : w, length = horizontal ? w : h, span = 2 * radius + 1;
         for (int line = 0; line < lines; line++) {
             for (int i = 0; i < length; i++) {
@@ -82,6 +108,5 @@ final class HeroArt {
                 dst[horizontal ? line * w + i : i * w + line] = Color.rgb(r / span, g / span, b / span);
             }
         }
-        return dst;
     }
 }

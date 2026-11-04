@@ -29,12 +29,12 @@
 
     <!-- Apps never shown as tiles (e.g. the Live TV app, which the Inputs menu already covers). -->
     <string-array name="hidden_apps">
-        <item>com.mediatek.wwtv.tvcenter</item>
+        <item>com.android.tv</item>
         <item>com.mitv.gallery</item>
     </string-array>
 
     <!-- The TV's Live TV / tuner app, offered at the end of the Inputs menu. Leave empty to omit. -->
-    <string name="live_tv_package" translatable="false">com.mediatek.wwtv.tvcenter</string>
+    <string name="live_tv_package" translatable="false">com.android.tv</string>
 
     <!-- Open the Live TV app above the first time Home comes up after the TV is switched on, for sets that are
          mostly used for broadcast TV. Once per boot: Home after that stays Home. Can also be set with
@@ -220,6 +220,7 @@
          where the firmware hands KEYCODE_GUIDE (172) to the stock launcher and no app ever receives it. Leave empty
          to omit. -->
     <string-array name="app_keys" translatable="false">
+        <item>189:home</item>
     </string-array>
 
     <!-- Package of the stock launcher, for TVs whose firmware turns it back on after it was disabled. XGIMI's
@@ -293,9 +294,9 @@
          Off by default; a theme can set "launcher_settings_button": true. -->
     <bool name="launcher_settings_button">false</bool>
     <!-- The dock band as light frosted glass, like the Inputs, Wi-Fi and Settings pills, so a sky or wallpaper shows
-         through it. false (the default) keeps the solid near-black band, or the cinematic shelf's dark glass. Can
+         through it. false keeps the solid near-black band, or the cinematic shelf's dark glass. Can
          also be set with "dock_glass": true in a theme's config.json. -->
-    <bool name="dock_glass">false</bool>
+    <bool name="dock_glass">true</bool>
     <!-- Draw the dock band and its edge. false leaves the tiles floating on the wallpaper (config.xml dock_band). -->
     <bool name="dock_band">true</bool>
     <!-- Every app in one row: the dock apps first, the rest after them, and the row scrolls sideways when focus
@@ -306,17 +307,17 @@
          the dock apps only. Can also be set with "dock_band_all" in a theme. -->
     <bool name="dock_band_all">false</bool>
     <!-- The dock band's padding equals the gap between its tiles on all four sides (as far as the grid's edges leave room),
-         so its corners are concentric with the tiles' and the spacing reads even. false (the default) keeps the fixed
+         so its corners are concentric with the tiles' and the spacing reads even. false keeps the fixed
          14dp above and below, up to 22dp at the sides and 26dp corners. Can also be set with "dock_even_padding": true in a theme's config.json. -->
-    <bool name="dock_even_padding">false</bool>
+    <bool name="dock_even_padding">true</bool>
     <!-- A reorder button (two arrows) in the top bar. Off by default: reordering is also in the Settings
          button's long-press menu, so it needs no extra button on screen. -->
     <bool name="reorder_button">false</bool>
     <!-- Wi-Fi and Settings as round icon-only buttons (the network name moves to the talkback description);
          Inputs keeps its label. -->
-    <bool name="icon_only_buttons">false</bool>
+    <bool name="icon_only_buttons">true</bool>
     <!-- The Inputs pill as a round icon button too (the label moves to the talkback description). -->
-    <bool name="icon_only_inputs">false</bool>
+    <bool name="icon_only_inputs">true</bool>
     <!-- With vpn_pill, the VPN pill as a round icon button too: an open lock on the plain glass button while no VPN is
          up, the closed lock in a green outline while one is (solid green only while focused, like the pill). "VPN" /
          "VPN off" become its talkback description. A theme can set "icon_only_vpn": true. -->
@@ -328,7 +329,7 @@
     <!-- true colours the Wi-Fi pill's icon green while the TV is online and leaves it white while it is not (dark on
          the focused pill either way), so the connection shows at a glance, also as an icon-only button. Can also be
          set with "wifi_status_color": true in a theme's config.json. -->
-    <bool name="wifi_status_color">false</bool>
+    <bool name="wifi_status_color">true</bool>
     <!-- With wifi_status_color: the icon orange while the TV is connected but Android has not reached the internet
          through it (a hotel or holiday-park Wi-Fi waiting for its login page) and red while it is offline, instead
          of white for both. Can also be set with "wifi_status_warnings": true in a theme's config.json. -->
@@ -370,6 +371,10 @@
     <!-- Wallpapers decode as RGB_565 (2 bytes a pixel, 4 MB at 1080p), which bands dark gradients such as a night
          sky, most of all under wallpaper_dim. true decodes them in 32-bit colour: 8 MB, for TVs with 2 GB or more. -->
     <bool name="wallpaper_true_color">false</bool>
+    <!-- Copy Home's wallpaper (or its background colour) to the system wallpaper, as the stock Google TV launcher does.
+         The TV's Settings panel shows the system wallpaper behind itself, not Home, so with the stock launcher disabled
+         it is black without this. Written once per picture change. -->
+    <bool name="system_wallpaper">true</bool>
     <!-- Rotating wallpapers: show each picture's name under the top-right buttons, from a captions.txt next to the
          pictures in wallpapers/ ("01-dusk.jpg<TAB>Dusk over the peaks", one per line). A picture without a line
          shows no name. Can also be set with "wallpaper_captions": true in a theme's config.json. -->
@@ -398,9 +403,9 @@
          shrink to fit from 5 up (about 144dp at 5, 117dp at 6 on a 1080p TV). -->
     <integer name="columns">4</integer>
 
-    <!-- Basic motion is on; advanced effects are opt-in in the launcher's own Settings screen. -->
+    <!-- Basic motion is on; advanced effects are enabled for Apple TV parallax and elevation. -->
     <bool name="animations">true</bool>
-    <bool name="advanced_effects">false</bool>
+    <bool name="advanced_effects">true</bool>
 
     <!-- Optional Default-home tile; keep this key for existing themes and tile-ordering work.
          Off by default because the chooser is also available from launcher settings. -->
@@ -451,11 +456,23 @@
          before settling. false: both go straight there, with no bounce, while scrolling stays smooth
          (reduced_motion also removes the overshoot, but scrolls in one jump). Can also be set with
          "focus_overshoot" in a theme's config.json. -->
-    <bool name="focus_overshoot">true</bool>
+    <bool name="focus_overshoot">false</bool>
 
     <!-- One line under the clock: CPU, free memory and free storage. Off by default; a theme can set
          "show_stats": true. Nothing is read, and the clock does not move, while this is false. -->
     <bool name="show_stats">false</bool>
+    <!-- With show_stats: memory as what is free ("Memory 316 MB free") instead of used / total. -->
+    <bool name="stats_memory_free">true</bool>
+    <!-- With show_stats: false leaves free storage out of the line. -->
+    <bool name="stats_storage">false</bool>
+    <!-- Beside the clock, one column of small capitals that fade line by line: the date, the weather
+         (home_weather_app) and the stats line (show_stats), centred on the clock with the divider at its height,
+         instead of the stats in their own line under the clock. Ignored with date_below_clock or shamsi_date. -->
+    <bool name="header_stacked">true</bool>
+    <!-- One line under the date with the weather now ("24° · Partly cloudy"), from this weather app's read-only
+         content://<package>.now/now (the Weather add-on in addons/weather). The app fetches and caches; the
+         launcher only asks it, while Home is on screen. Leave empty to omit. -->
+    <string name="home_weather_app" translatable="false">com.gathin.chillradio</string>
 
     <!-- Each team's next game in the F1 panel's place under the clock, rotating with the theme's F1 weekend: the package
          of an add-on that publishes them (the Game Day add-on: io.github.justinnewman.gameday; contract in docs/modules.md).
@@ -464,21 +481,21 @@
     <string name="game_day" translatable="false"></string>
 
     <!-- Time-of-day backdrop behind everything: a dark gradient that follows the clock, with a warm
-         horizon glow around sunrise and sunset. 0 keeps the plain background (the default); 1 to 100
-         sets its opacity. Around 60 reads clearly without hiding a wallpaper. Can also be set with
-         "sky_intensity": 60 in a theme's config.json. -->
-    <integer name="sky_intensity">0</integer>
+         horizon glow around sunrise and sunset. 0 keeps the plain background; 1 to 100
+         sets its opacity. Around 75 reads clearly without hiding a wallpaper. Can also be set with
+         "sky_intensity": 75 in a theme's config.json. -->
+    <integer name="sky_intensity">75</integer>
     <!-- Where the TV is, in decimal degrees, so the sky's sunrise and sunset glows follow the real sun
          (computed on the TV, no network). Empty: a fixed temperate day, sunset glow around 19:00.
          Vilnius: 54.69 and 25.28. -->
-    <string name="latitude" translatable="false"></string>
-    <string name="longitude" translatable="false"></string>
+    <string name="latitude" translatable="false">12.97</string>
+    <string name="longitude" translatable="false">77.59</string>
 
     <!-- Cinematic top shelf: the focused dock app's artwork, softened, fills the top of the screen in its
          colour; the shelf gets a larger name, a "Last opened" line (from the apps Home opened) and dock position
          dots, the focus glow takes the app's colour and the dock band turns translucent. false keeps the plain
          shelf. Can also be set with "cinematic_home": true in a theme's config.json. -->
-    <bool name="cinematic_home">false</bool>
+    <bool name="cinematic_home">true</bool>
     <!-- With cinematic_home, false leaves out the dock position dots under the app's name, for a quieter shelf. Can
          also be set with "cinematic_dots": false in a theme's config.json. -->
     <bool name="cinematic_dots">true</bool>
@@ -487,11 +504,11 @@
          "cinematic_white_focus": true in a theme's config.json. -->
     <bool name="cinematic_white_focus">false</bool>
     <!-- With cinematic_home, how much of a wallpaper the shelf covers: cinematic_scrim is the strength of the dark
-         scrim that keeps the name readable (0 to 100 percent, 100 as before) and cinematic_art the opacity of the
-         app's softened artwork (0 to 100, 50 as before; 0 leaves the wallpaper uncovered). Lower values let a
+         scrim that keeps the name readable (0 to 100 percent) and cinematic_art the opacity of the
+         app's softened artwork (0 to 100; 0 leaves the wallpaper uncovered). Lower values let a
          theme's wallpaper show through. A theme can set "cinematic_scrim" and "cinematic_art". -->
-    <integer name="cinematic_scrim">100</integer>
-    <integer name="cinematic_art">50</integer>
+    <integer name="cinematic_scrim">80</integer>
+    <integer name="cinematic_art">65</integer>
 
     <!-- The glow behind the dock in the focused app's colour (red for YouTube, blue for Prime Video). false keeps
          only background_color or the wallpaper behind everything. Can also be set with "ambient_glow": false in a
@@ -504,7 +521,7 @@
     <bool name="glow_snap">false</bool>
     <!-- The focus highlight glows in the focused app's colour on every tile, as the cinematic shelf does for the
          dock, without cinematic_home. Can also be set with "app_glow": true in a theme's config.json. -->
-    <bool name="app_glow">false</bool>
+    <bool name="app_glow">true</bool>
     <!-- The rows fade out as they scroll up under the clock, instead of being cut off at a hard line (TopFade).
          The grid then draws into a hardware layer, about 6 MB of graphics memory at 1080p, so it is off by default.
          Can also be set with "fade_rows": true in a theme's config.json. -->
@@ -513,16 +530,16 @@
          Unlike the system screensaver this never starts over live TV or an app, which matters on TVs whose
          Live TV window does not keep the screen on (CVTE): there the system screensaver would start in the
          middle of a programme. Can also be set with "home_idle_clock_minutes": 10 in a theme's config.json. -->
-    <integer name="home_idle_clock_minutes">0</integer>
+    <integer name="home_idle_clock_minutes">5</integer>
     <!-- Back on the Home screen opens the clock screensaver (ClockActivity, the same screen as
          home_idle_clock_minutes). Back keeps working as usual inside apps and Settings; only Home's own Back
          press changes. Off by default (Back does nothing on Home); a theme can set "back_opens_clock": true. -->
-    <bool name="back_opens_clock">false</bool>
+    <bool name="back_opens_clock">true</bool>
     <!-- The clock screensaver (Home idle clock and the system screensaver) over Home's wallpaper instead of black with
          a coloured glow. The clock still moves every minute. Can also be set with "clock_wallpaper" in a theme. -->
-    <bool name="clock_wallpaper">false</bool>
+    <bool name="clock_wallpaper">true</bool>
     <!-- How dark that wallpaper is behind the clock, 0 to 90 %. Can also be set with "clock_wallpaper_dim". -->
-    <integer name="clock_wallpaper_dim">50</integer>
+    <integer name="clock_wallpaper_dim">20</integer>
     <!-- The clock screensaver's slow coloured glow behind the clock. false leaves the clock and date alone on plain black
          (OLED panels); they still move every minute. Ignored while clock_wallpaper shows a picture. Can also be set
          with "clock_glow" in a theme. -->

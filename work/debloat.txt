@@ -1,0 +1,17 @@
+# Mi TV 4A Pro 43 (MiTV-AXSO0, dangal), Android TV 9, PI.6036 - packages disabled in this session
+# Undo: TV_HOST=<tv ip> tools/restore.sh work/debloat.txt
+# Batch 1: Google recommendation feeds (sponsored rows on the stock home)
+com.google.android.tvrecommendations
+com.google.android.leanbacklauncher.recommendations
+# Batch 2: PatchWall and Xiaomi sponsored content
+com.mitv.tvhome.atv                         # PatchWall
+com.mitv.tvhome.mitvplus                    # Xiaomi TV+ sponsored live channels
+# Batch 3: Mi Cast / Miracast (Chromecast built-in is kept)
+com.mitv.milinkservice
+com.xiaomi.mitv.smartshare
+com.xiaomi.wfdsinkhelperservice
+# Batch 4: preloaded and unused apps (owner's choice)
+com.xiaomi.mimusic2
+com.mitv.gallery
+com.amazon.minitv.androidtv.app
+com.nordvpn.android

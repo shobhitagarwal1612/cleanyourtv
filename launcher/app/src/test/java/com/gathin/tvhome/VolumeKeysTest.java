@@ -37,4 +37,16 @@ public class VolumeKeysTest {
         assertFalse(VolumeKeys.changesPress(ACTION_DOWN, 1));
         assertFalse(VolumeKeys.changesPress(ACTION_DOWN, 12));
     }
+
+    @Test
+    public void mediaAppsAreDistinguishedFromSystemAndLauncher() {
+        assertTrue(VolumeKeys.isMediaApp("com.netflix.ninja"));
+        assertTrue(VolumeKeys.isMediaApp("com.google.android.youtube.tv"));
+        assertTrue(VolumeKeys.isMediaApp("org.smarttube.stable"));
+        assertFalse(VolumeKeys.isMediaApp("com.gathin.tvhome"));
+        assertFalse(VolumeKeys.isMediaApp("com.gathin.btconnect"));
+        assertFalse(VolumeKeys.isMediaApp("com.android.tv.settings"));
+        assertFalse(VolumeKeys.isMediaApp(""));
+        assertFalse(VolumeKeys.isMediaApp(null));
+    }
 }

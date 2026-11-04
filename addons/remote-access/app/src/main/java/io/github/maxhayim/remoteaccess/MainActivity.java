@@ -19,7 +19,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.lang.reflect.Method;
 import java.net.Inet4Address;
+import java.net.InetAddress;
 
 /**
  * The tile and module card open this: whether the TV can be controlled over the network, from where, and one
@@ -29,6 +31,16 @@ import java.net.Inet4Address;
 public class MainActivity extends Activity {
     private static final long CONFIRM_MS = 5000;
     private static final String TAILSCALE = "com.tailscale.ipn";
+    private static final Method SYS_PROP_GET;
+
+    static {
+        Method m = null;
+        try {
+            m = Class.forName("android.os.SystemProperties").getMethod("get", String.class);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+        SYS_PROP_GET = m;
+    }
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private TextView status;
@@ -36,8 +48,9 @@ public class MainActivity extends Activity {
     /** OK pressed once on the debugging row: a second press within CONFIRM_MS switches it off. */
     private boolean armed;
     private final Runnable disarm = () -> {
+        if (!armed) return;
         armed = false;
-        refresh();
+        updateAdbRow();
     };
 
     @Override
@@ -65,11 +78,17 @@ public class MainActivity extends Activity {
         setContentView(page);
 
         adbRow = add(rows, new Row(this, "Network debugging (ADB)", null, this::adbPressed));
+        adbRow.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus && armed) {
+                main.removeCallbacks(disarm);
+                disarm.run();
+            }
+        });
         addressRow = add(rows, new Row(this, "This TV's address", "On your home network.", null));
         tailscaleRow = add(rows, new Row(this, "Tailscale", "Reach the TV from outside your home, privately.",
                 this::openTailscale));
         add(rows, new Row(this, "Developer options", "Where network debugging is switched on again.",
-                () -> open(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))));
+                this::openDeveloperOptions));
         adbRow.requestFocus();
     }
 
@@ -87,44 +106,58 @@ public class MainActivity extends Activity {
     }
 
     private Row add(LinearLayout rows, Row r) {
-        rows.addView(r, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = px(4);
+        rows.addView(r, lp);
         return r;
     }
 
-    private void refresh() {
+    private void updateAdbRow() {
         boolean enabled = global("adb_enabled") == 1;
         boolean wireless = global("adb_wifi_enabled") == 1;
         int port = Access.port(prop("service.adb.tcp.port"));
         Access.Adb adb = Access.adb(enabled, wireless, port);
         adbRow.setValue(armed ? "OK again: off" : Access.adbValue(adb, wireless, port));
-        if (adb == Access.Adb.OFF) {
+        adbRow.setValueColor(armed ? Row.VALUE_ARMED : Row.VALUE_DEFAULT);
+        if (armed) {
+            adbRow.setDetail("Press OK again within 5 seconds to switch debugging off.");
+        } else if (adb == Access.Adb.OFF) {
             adbRow.setDetail("Nobody can control this TV over the network.");
+        } else if (adb == Access.Adb.USB_ONLY) {
+            adbRow.setDetail(canWrite()
+                    ? "Network debugging is off; USB debugging is on. OK twice switches USB debugging off too."
+                    : "Network debugging is off; USB debugging is on. Switch it off in Developer options (OK opens them).");
         } else if (!canWrite()) {
             adbRow.setDetail("Switch it off in Developer options (OK opens them). install.sh lets this button do it.");
         } else {
             adbRow.setDetail("Anyone allowed on your network can control this TV. OK twice switches it off.");
         }
+        if (adb == Access.Adb.NETWORK) status.setText("Network debugging is on. Switch it off when you're done.");
+        else status.setText("Network debugging is off.");
+    }
+
+    private void refresh() {
+        updateAdbRow();
 
         String[] found = addresses();
         addressRow.setValue(found[0] != null ? found[0] : "No network");
         boolean installed = installed(TAILSCALE);
         tailscaleRow.setValue(Access.tailscale(installed, found[1]));
-
-        if (adb == Access.Adb.NETWORK) status.setText("Network debugging is on. Switch it off when you're done.");
-        else status.setText("Network debugging is off.");
     }
 
     private void adbPressed() {
         boolean on = global("adb_enabled") == 1 || global("adb_wifi_enabled") == 1;
         if (!on) return;
         if (!canWrite()) {
-            open(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
+            openDeveloperOptions();
             return;
         }
         if (!armed) {
             armed = true;
+            main.removeCallbacks(disarm);
             main.postDelayed(disarm, CONFIRM_MS);
-            refresh();
+            updateAdbRow();
             return;
         }
         main.removeCallbacks(disarm);
@@ -133,9 +166,9 @@ public class MainActivity extends Activity {
             Settings.Global.putInt(getContentResolver(), "adb_wifi_enabled", 0);
             Settings.Global.putInt(getContentResolver(), Settings.Global.ADB_ENABLED, 0);
         } catch (SecurityException e) {
-            open(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
+            openDeveloperOptions();
         }
-        refresh();
+        updateAdbRow();
     }
 
     private boolean canWrite() {
@@ -148,8 +181,9 @@ public class MainActivity extends Activity {
 
     /** android.os.SystemProperties is hidden but readable; empty when this firmware refuses it. */
     private static String prop(String name) {
+        if (SYS_PROP_GET == null) return "";
         try {
-            Object v = Class.forName("android.os.SystemProperties").getMethod("get", String.class).invoke(null, name);
+            Object v = SYS_PROP_GET.invoke(null, name);
             return v == null ? "" : v.toString();
         } catch (ReflectiveOperationException | RuntimeException e) {
             return "";
@@ -160,15 +194,20 @@ public class MainActivity extends Activity {
     private String[] addresses() {
         String[] out = new String[2];
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        if (cm == null) return out;
         Network active = cm.getActiveNetwork();
-        for (Network n : cm.getAllNetworks()) {
+        Network[] networks = cm.getAllNetworks();
+        if (networks == null) return out;
+        for (Network n : networks) {
             NetworkCapabilities caps = cm.getNetworkCapabilities(n);
             LinkProperties lp = cm.getLinkProperties(n);
             if (caps == null || lp == null) continue;
             boolean vpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
             for (LinkAddress la : lp.getLinkAddresses()) {
-                if (!(la.getAddress() instanceof Inet4Address)) continue;
-                String ip = la.getAddress().getHostAddress();
+                InetAddress addr = la.getAddress();
+                if (!(addr instanceof Inet4Address)) continue;
+                if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()) continue;
+                String ip = addr.getHostAddress();
                 if (vpn && Access.tailscaleAddress(ip)) out[1] = ip;
                 else if (!vpn && (out[0] == null || n.equals(active))) out[0] = ip;
             }
@@ -191,11 +230,19 @@ public class MainActivity extends Activity {
         if (i != null) open(i);
     }
 
-    private void open(Intent i) {
+    private void openDeveloperOptions() {
+        if (!open(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))) {
+            open(new Intent(Settings.ACTION_SETTINGS));
+        }
+    }
+
+    private boolean open(Intent i) {
         try {
             startActivity(i);
+            return true;
         } catch (ActivityNotFoundException | SecurityException ignored) {
             // Some TVs have no screen for it.
+            return false;
         }
     }
 
@@ -203,3 +250,4 @@ public class MainActivity extends Activity {
         return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 }
+

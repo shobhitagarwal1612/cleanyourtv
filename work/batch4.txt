@@ -1,0 +1,5 @@
+# Batch 4: preloaded and unused apps (owner's choice)
+com.xiaomi.mimusic2
+com.mitv.gallery
+com.amazon.minitv.androidtv.app
+com.nordvpn.android

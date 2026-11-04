@@ -95,11 +95,14 @@ public final class BatFlightView extends View {
             removeCallbacks(finish);
             finish();
         }
+        if (bat != null && !bat.isRecycled()) {
+            bat.recycle();
+        }
     }
 
     @Override
     protected void onDraw(Canvas c) {
-        if (!playing) return;
+        if (!playing || bat == null || bat.isRecycled()) return;
         long now = SystemClock.uptimeMillis();
         float elapsed = (now - start) / (float) duration;
         float secs = (now - start) / 1000f;

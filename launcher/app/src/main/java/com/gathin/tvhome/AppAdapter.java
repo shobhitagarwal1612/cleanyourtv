@@ -25,13 +25,13 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.view.animation.DecelerateInterpolator;
-import android.view.animation.OvershootInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
@@ -208,8 +208,6 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final boolean showHomeSettings;
     /** Calmer motion for weak GPUs (config.xml, reduced_motion): no overshoot, shorter fades. */
     private final boolean reducedMotion;
-    /** The focus zoom may overshoot (config.xml, focus_overshoot). */
-    private final boolean focusOvershoot;
     /** Package to the action its tile sends instead of the start screen (config.xml, launch_actions). */
     private final Map<String, String> launchActions;
     /** Hold OK opens the activity's tile menu (config.xml, tile_menu); false opens App info, as before. */
@@ -221,6 +219,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     /** Packages drawn from their icon and name even when they have a banner (config.xml icon_tiles). */
     private final Set<String> iconTiles;
     private final List<Entry> items = new ArrayList<>();
+    private final Map<String, Drawable> bannerCache = new HashMap<>();
+
+    private static final int BANNER_W = 320, BANNER_H = 180;
+    private static Bitmap scratchBannerBmp;
+    private static int[] scratchBannerPx;
+    private static int[] scratchBannerOut;
 
     AppAdapter(Context ctx, TileListener listener, int dockSize, Config cfg) {
         this.ctx = ctx;
@@ -228,14 +232,13 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.dockSize = dockSize;
         this.favourites = cfg.dockApps;
         this.fillDock = cfg.fillDock;
-        this.hidden = new HashSet<>(cfg.hiddenApps);
+        this.hidden = new HashSet<>(RoomModes.effectiveHiddenApps(cfg.hiddenApps));
         this.libraryPreload = new HashSet<>(cfg.libraryApps);
         this.animations = cfg.animations;
         this.advancedEffects = cfg.animations && cfg.advancedEffects;
         this.showHomeSettings = cfg.showHomeSettingsShortcut;
         this.showLibrary = LibraryApps.showPill(cfg.appLibrary, cfg.libraryButton, cfg.showLibraryPill);
         this.reducedMotion = cfg.reducedMotion;
-        this.focusOvershoot = cfg.focusOvershoot;
         this.rowsBelowDock = cfg.rowsBelowDock;
         this.dockTitle = cfg.dockTitle;
         this.dockRow = cfg.dockRow;
@@ -251,6 +254,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         // Tiles keep their identity across reload(), so a focused tile stays on its app instead of
         // its view being rebound to whatever app now sits in that slot.
         setHasStableIds(true);
+    }
+
+    void setHiddenApps(Set<String> newHidden) {
+        hidden.clear();
+        hidden.addAll(newHidden);
     }
 
     /**
@@ -299,8 +307,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             Drawable banner = null;
             // uniform_tiles draws the icon, so an app's banner is never loaded. A module card keeps its banner.
             if (!(uniformTiles && card == null)) {
-                banner = bundledBanner(appBanners.get(pkg));
-                if (banner == null) banner = iconTiles.contains(pkg) ? iconBanner(ri.loadIcon(pm)) : loadBanner(pm, ri);
+                banner = bannerCache.get(pkg);
+                if (banner == null && !bannerCache.containsKey(pkg)) {
+                    banner = bundledBanner(appBanners.get(pkg));
+                    if (banner == null) banner = iconTiles.contains(pkg) ? iconBanner(ri.loadIcon(pm)) : loadBanner(pm, ri);
+                    bannerCache.put(pkg, banner);
+                }
             }
             // The icon is only drawn (and sampled for the glow) when there is no banner, so a tile with a
             // banner skips loading and decoding it.
@@ -347,18 +359,29 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     /** icon_tiles: the app's icon centred on a dark banner-shaped tile, for apps whose own banner crops badly. */
     private Drawable iconBanner(Drawable icon) {
-        int w = 320, h = 180, side = 104;
-        android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
-        android.graphics.Canvas canvas = new android.graphics.Canvas(bmp);
+        int w = BANNER_W, h = BANNER_H, side = 104;
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565);
+        Canvas canvas = new Canvas(bmp);
         canvas.drawColor(0xFF15202B);
         icon.setBounds((w - side) / 2, (h - side) / 2, (w + side) / 2, (h + side) / 2);
         icon.draw(canvas);
         return new android.graphics.drawable.BitmapDrawable(ctx.getResources(), bmp);
     }
 
-    /** A banner_* drawable bundled with the launcher, or null for none or a name that is not one. */
+    /** A banner_* image from files/banners/ or a drawable bundled with the launcher, or null for none. */
     private Drawable bundledBanner(String name) {
         if (name == null || !name.startsWith("banner_")) return null;
+        java.io.File dir = ctx.getExternalFilesDir("banners");
+        if (dir != null) {
+            java.io.File f = new java.io.File(dir, name + ".png");
+            if (!f.isFile()) f = new java.io.File(dir, name + ".jpg");
+            if (f.isFile()) {
+                android.graphics.BitmapFactory.Options opts = new android.graphics.BitmapFactory.Options();
+                opts.inPreferredConfig = Bitmap.Config.RGB_565;
+                Bitmap bmp = android.graphics.BitmapFactory.decodeFile(f.getAbsolutePath(), opts);
+                if (bmp != null) return new android.graphics.drawable.BitmapDrawable(ctx.getResources(), bmp);
+            }
+        }
         int id = ctx.getResources().getIdentifier(name, "drawable", ctx.getPackageName());
         return id != 0 ? ctx.getDrawable(id) : null;
     }
@@ -378,7 +401,97 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
         if (banner == null) banner = ri.activityInfo.loadBanner(pm);
         // A square "banner" counts as none: the tile shows the app's icon and name instead of a blur.
-        return banner != null && isBannerShaped(banner.getIntrinsicWidth(), banner.getIntrinsicHeight()) ? banner : null;
+        if (banner == null || !isBannerShaped(banner.getIntrinsicWidth(), banner.getIntrinsicHeight())) return null;
+        return darkenLightBanner(banner);
+    }
+
+    /**
+     * Converts a banner with a stark white background plate (such as Netflix or YouTube) into a dark charcoal
+     * gradient plate, keeping vivid brand colours intact, turning dark wordmarks white, and preserving enclosed
+     * white glyphs inside coloured badges (such as YouTube's play triangle).
+     */
+    private Drawable darkenLightBanner(Drawable live) {
+        int w = BANNER_W, h = BANNER_H;
+        if (scratchBannerBmp == null || scratchBannerBmp.isRecycled()) {
+            scratchBannerBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        }
+        scratchBannerBmp.eraseColor(0);
+        Canvas c = new Canvas(scratchBannerBmp);
+        Rect saved = new Rect(live.getBounds());
+        live.setBounds(0, 0, w, h);
+        live.draw(c);
+        live.setBounds(saved);
+        if (!isWhiteCorner(scratchBannerBmp.getPixel(8, 8))
+                || !isWhiteCorner(scratchBannerBmp.getPixel(w - 9, 8))
+                || !isWhiteCorner(scratchBannerBmp.getPixel(8, h - 9))
+                || !isWhiteCorner(scratchBannerBmp.getPixel(w - 9, h - 9))) {
+            return live;
+        }
+        if (scratchBannerPx == null) scratchBannerPx = new int[w * h];
+        if (scratchBannerOut == null) scratchBannerOut = new int[w * h];
+        int[] px = scratchBannerPx;
+        int[] out = scratchBannerOut;
+        scratchBannerBmp.getPixels(px, 0, w, 0, 0, w, h);
+        boolean hasDarkText = false;
+        for (int p : px) {
+            int r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+            int max = Math.max(r, Math.max(g, b)), min = Math.min(r, Math.min(g, b));
+            if (max < 110 && max - min < 30) {
+                hasDarkText = true;
+                break;
+            }
+        }
+        for (int y = 0; y < h; y++) {
+            float ty = (float) y / (h - 1);
+            int dr = Math.round(34f - 16f * ty);
+            int dg = Math.round(32f - 16f * ty);
+            int db = Math.round(38f - 18f * ty);
+            for (int x = 0; x < w; x++) {
+                int p = px[y * w + x];
+                int r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+                int max = Math.max(r, Math.max(g, b)), min = Math.min(r, Math.min(g, b));
+                if (hasDarkText && min > 160 && enclosedInColorBadge(px, w, h, x, y)) {
+                    out[y * w + x] = p;
+                    continue;
+                }
+                float wgtW = min / 255f;
+                float wgtK = (255 - max) / 255f;
+                int nr = clampByte(Math.round(wgtW * dr + wgtK * 244f + (r - min)));
+                int ng = clampByte(Math.round(wgtW * dg + wgtK * 244f + (g - min)));
+                int nb = clampByte(Math.round(wgtW * db + wgtK * 248f + (b - min)));
+                out[y * w + x] = 0xFF000000 | (nr << 16) | (ng << 8) | nb;
+            }
+        }
+        Bitmap result = Bitmap.createBitmap(out, w, h, Bitmap.Config.RGB_565);
+        return new android.graphics.drawable.BitmapDrawable(ctx.getResources(), result);
+    }
+
+    private static boolean isWhiteCorner(int p) {
+        int r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+        return ((p >>> 24) > 240) && r > 232 && g > 232 && b > 232 && Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) < 18;
+    }
+
+    private static boolean enclosedInColorBadge(int[] px, int w, int h, int x, int y) {
+        int reach = 32;
+        boolean l = false, r = false, u = false, d = false;
+        for (int dx = 1; dx <= reach && x - dx >= 0; dx++) if (isVividBadgePixel(px[y * w + (x - dx)])) { l = true; break; }
+        if (!l) return false;
+        for (int dx = 1; dx <= reach && x + dx < w; dx++) if (isVividBadgePixel(px[y * w + (x + dx)])) { r = true; break; }
+        if (!r) return false;
+        for (int dy = 1; dy <= reach && y - dy >= 0; dy++) if (isVividBadgePixel(px[(y - dy) * w + x])) { u = true; break; }
+        if (!u) return false;
+        for (int dy = 1; dy <= reach && y + dy < h; dy++) if (isVividBadgePixel(px[(y + dy) * w + x])) { d = true; break; }
+        return d;
+    }
+
+    private static boolean isVividBadgePixel(int p) {
+        int r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+        int max = Math.max(r, Math.max(g, b)), min = Math.min(r, Math.min(g, b));
+        return max > 150 && max - min > 110;
+    }
+
+    private static int clampByte(int v) {
+        return v < 0 ? 0 : Math.min(255, v);
     }
 
     /**
@@ -392,6 +505,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     /** Lets go of every tile and its artwork (Home is in the background and memory is short). */
     void clear() {
         items.clear();
+        bannerCache.clear();
         notifyDataSetChanged();
     }
 
@@ -421,6 +535,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         cardLp.width = w;
         cardLp.height = h;
         card.setLayoutParams(cardLp);
+        // A faint light edge on every tile, so a dark banner keeps its outline on a dark wallpaper.
+        GradientDrawable bevel = new GradientDrawable();
+        bevel.setCornerRadius(cornerRadius(w, density));
+        bevel.setColor(0);
+        bevel.setStroke(Math.max(1, Math.round(density)), 0x22FFFFFF);
+        card.setForeground(bevel);
         View name = v.findViewById(R.id.name);
         ViewGroup.MarginLayoutParams nameLp = (ViewGroup.MarginLayoutParams) name.getLayoutParams();
         nameLp.width = w;
@@ -452,7 +572,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             View label = v.findViewById(R.id.label);
             label.setPadding(label.getPaddingLeft(), label.getPaddingTop(), label.getPaddingRight(), Math.round(4f * density));
         }
-        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot);
+        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha);
     }
 
     @Override
@@ -491,9 +611,16 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         // A fully opaque banner covers the whole card (centerCrop), so the card's own fill under it is drawn for
         // nothing on every frame; keep it under banners with transparent parts and under icon tiles.
         h.card.setBackground(e.banner != null && e.banner.getOpacity() == PixelFormat.OPAQUE ? null : h.cardBackground);
-        if (uniformTiles && e.banner == null) {
-            if (e.backdrop == null) e.backdrop = backdrop(e.icon, ambientColorAt(position));
-            h.card.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, e.backdrop));
+        if (e.banner == null) {
+            // No TV banner: a diagonal plate in the icon's own colour instead of the flat grey card. Outside
+            // uniform_tiles the caption sits on the plate, so skip the icon's own (often white) plate colour.
+            if (e.backdrop == null) {
+                e.backdrop = uniformTiles ? backdrop(e.icon, ambientColorAt(position))
+                        : shadedPlate(dominantColor(e.icon));
+            }
+            // uniform_tiles carries the icon's own (vertically graded) plate out to the card's edges, so it stays top to bottom.
+            h.card.setBackground(new GradientDrawable(uniformTiles ? GradientDrawable.Orientation.TOP_BOTTOM
+                    : GradientDrawable.Orientation.TL_BR, e.backdrop));
         }
         if (e.banner != null) {
             h.banner.setImageDrawable(e.banner);
@@ -508,7 +635,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.label.setText(e.label);
             h.label.setVisibility(uniformTiles ? View.GONE : View.VISIBLE);
         }
-        h.card.setOnClickListener(v -> launch(e));
+        h.card.setOnClickListener(v -> {
+            h.cardSpringX.cancel();
+            h.cardSpringY.cancel();
+            launch(e, v);
+        });
         h.card.setOnLongClickListener(v -> {
             if (tileMenu) {
                 int pos = h.getBindingAdapterPosition();
@@ -525,9 +656,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         });
     }
 
-    /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
+    /** Opens the tile's activity by explicit component, expanding spatially from the pressed card. */
     @SuppressWarnings("deprecation")
-    private void launch(Entry e) {
+    private void launch(Entry e, View card) {
         if (e.kind == Entry.HOME_SETTINGS) {
             ctx.startActivity(new Intent(ctx, HomeSettingsActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -552,14 +683,102 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             if (ctx.getPackageManager().resolveActivity(byAction, 0) != null) i = byAction;
         }
         try {
-            ctx.startActivity(i);
-            if (cinematic) LastOpened.record(ctx, e.pkg);
-            if (advancedEffects && !reducedMotion && ctx instanceof Activity) {
-                ((Activity) ctx).overridePendingTransition(R.anim.app_open_enter, R.anim.app_open_exit);
+            if (ctx instanceof MainActivity) ((MainActivity) ctx).playLaunchSound();
+            if (animations && !reducedMotion && card != null && card.getWidth() > 0 && card.getHeight() > 0) {
+                card.animate().cancel();
+                card.animate()
+                        .scaleX(1.35f)
+                        .scaleY(1.35f)
+                        .setDuration(180)
+                        .setInterpolator(new DecelerateInterpolator())
+                        .withEndAction(() -> {
+                            float rest = card.isFocused() && animations ? focusScale() : 1f;
+                            card.setScaleX(rest);
+                            card.setScaleY(rest);
+                        })
+                        .start();
+                android.os.Bundle opts = android.app.ActivityOptions.makeClipRevealAnimation(
+                        card, 0, 0, card.getWidth(), card.getHeight()).toBundle();
+                ctx.startActivity(i, opts);
+            } else {
+                ctx.startActivity(i);
+                if (advancedEffects && !reducedMotion && ctx instanceof Activity) {
+                    ((Activity) ctx).overridePendingTransition(R.anim.app_open_enter, R.anim.app_open_exit);
+                }
             }
+            reapPreviousStreamers(ctx, e.pkg);
+            VolumeKeys.onAppChanged(ctx, null, e.pkg);
+            if (cinematic) LastOpened.record(ctx, e.pkg);
         } catch (Exception ex) {
             Toast.makeText(ctx, ctx.getString(R.string.cant_open, e.label), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /** Heavy video streaming apps whose cached background processes are reaped when switching to another streamer. */
+    private static final Set<String> HEAVY_STREAMERS = new HashSet<>(Arrays.asList(
+            "com.netflix.ninja",
+            "com.amazon.amazonvideo.livingroom",
+            "com.google.android.youtube.tv",
+            "in.startv.hotstar",
+            "org.smarttube.stable",
+            "com.sonyliv",
+            "com.jio.media.stb.ondemand",
+            "com.plexapp.android",
+            "org.jellyfin.androidtv",
+            "com.disney.disneyplus"
+    ));
+
+    /** Background music/radio apps that should never be reaped when launching a video app. */
+    private static final Set<String> PROTECTED_AUDIO_PKGS = new HashSet<>(Arrays.asList(
+            "com.gathin.chillradio",
+            "com.spotify.tv.android",
+            "com.spotify.music",
+            "com.google.android.youtube.tvmusic",
+            "com.apple.android.music",
+            "deezer.android.tv"
+    ));
+
+    private static final Set<String> launchedStreamers = Collections.synchronizedSet(new HashSet<>());
+
+    /**
+     * Smart "Single-Streamer" RAM Reaper: after starting a video streamer, reaps cached background
+     * processes of previously launched streamers.
+     */
+    private static void reapPreviousStreamers(Context ctx, String targetPkg) {
+        if (targetPkg == null || PROTECTED_AUDIO_PKGS.contains(targetPkg)) return;
+        final Context appCtx = ctx.getApplicationContext();
+        new Thread(() -> {
+            try {
+                StringBuilder toReap = new StringBuilder();
+                synchronized (launchedStreamers) {
+                    java.util.Iterator<String> it = launchedStreamers.iterator();
+                    while (it.hasNext()) {
+                        String prev = it.next();
+                        if (prev.equals(targetPkg)
+                                || prev.equals(appCtx.getPackageName())
+                                || PROTECTED_AUDIO_PKGS.contains(prev)) {
+                            continue;
+                        }
+                        if (toReap.length() > 0) toReap.append(',');
+                        toReap.append(prev);
+                        it.remove();
+                    }
+                    if (HEAVY_STREAMERS.contains(targetPkg)) {
+                        launchedStreamers.add(targetPkg);
+                    }
+                }
+                if (toReap.length() > 0) {
+                    Uri uri = Uri.parse("content://com.gathin.chillradio.now/reap")
+                            .buildUpon()
+                            .appendQueryParameter("pkgs", toReap.toString())
+                            .build();
+                    try (android.database.Cursor ignored = appCtx.getContentResolver().query(uri, null, null, null, null)) {
+                    } catch (Throwable ignored) {
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }).start();
     }
 
     @Override
@@ -684,7 +903,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (position < 0 || position >= items.size()) return 0xFF444444;
         Entry e = items.get(position);
         if (e.ambient == 0) {
-            e.ambient = uniformTiles && e.banner == null ? dominantColor(e.icon) : vividColor(e.banner != null ? e.banner : e.icon);
+            e.ambient = e.banner == null ? dominantColor(e.icon) : vividColor(e.banner);
         }
         return e.ambient;
     }
@@ -744,8 +963,13 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private static int[] backdrop(Drawable live, int fallback) {
         int[] plate = iconPlate(live);
         if (plate != null) return plate;
+        return shadedPlate(fallback);
+    }
+
+    /** A gradient of one colour, deepened so a light mark (and a white caption) stands out on it. */
+    private static int[] shadedPlate(int color) {
         float[] hsv = new float[3];
-        Color.colorToHSV(fallback, hsv);
+        Color.colorToHSV(color, hsv);
         // Yellow darkened turns olive: lean it to amber instead.
         if (hsv[0] > 42f && hsv[0] < 70f && hsv[1] > 0.3f) hsv[0] = 36f;
         hsv[2] = Math.min(hsv[2], 0.62f);
@@ -912,12 +1136,13 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final boolean reducedMotion;
         /** Alpha of the name while the tile is not focused (always_show_names). */
         final float restNameAlpha;
-        final boolean overshoot;
+        final SpringAnimation cardSpringX;
+        final SpringAnimation cardSpringY;
         /** A dock tile: it grows in place without advanced_effects' lift, which reads as off-centre in the band (#2135). */
         boolean inDock;
 
         Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
-               boolean reducedMotion, float restNameAlpha, boolean overshoot) {
+               boolean reducedMotion, float restNameAlpha) {
             super(v);
             card = v.findViewById(R.id.card);
             cardBackground = card.getBackground();
@@ -929,9 +1154,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             this.advancedEffects = advancedEffects;
             this.reducedMotion = reducedMotion;
             this.restNameAlpha = restNameAlpha;
-            this.overshoot = overshoot;
 
             final float density = v.getResources().getDisplayMetrics().density;
+            card.setCameraDistance(8000f * density);
+            card.setSoundEffectsEnabled(false);
             card.setOutlineProvider(new ViewOutlineProvider() {
                 @Override
                 public void getOutline(View view, Outline outline) {
@@ -940,6 +1166,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 }
             });
             card.setClipToOutline(true);
+
+            cardSpringX = new SpringAnimation(card, SpringAnimation.SCALE_X, 1f);
+            cardSpringY = new SpringAnimation(card, SpringAnimation.SCALE_Y, 1f);
+            cardSpringX.getSpring().setStiffness(380f).setDampingRatio(0.68f);
+            cardSpringY.getSpring().setStiffness(380f).setDampingRatio(0.68f);
 
             card.setOnKeyListener((view, keyCode, event) -> {
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
@@ -956,8 +1187,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 float scale = !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
                 float s = focused ? scale : 1f;
                 if (!animations) {
+                    cardSpringX.cancel();
+                    cardSpringY.cancel();
                     view.setScaleX(1f);
                     view.setScaleY(1f);
+                    view.setRotationX(0f);
+                    view.setRotationY(0f);
                     view.setTranslationY(0f);
                     view.setTranslationZ(0f);
                     banner.setScaleX(1f);
@@ -965,27 +1200,30 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     name.setAlpha(focused ? 1f : restNameAlpha);
                     name.setTranslationY(0f);
                 } else if (reducedMotion) {
-                    // A short zoom with no hardware layer: building a layer for so short an animation costs more
-                    // frames than it saves. The name just appears instead of fading.
+                    cardSpringX.cancel();
+                    cardSpringY.cancel();
                     view.animate().scaleX(s).scaleY(s)
+                            .rotationX(0f).rotationY(0f)
                             .translationY(focused && advancedEffects && !inDock ? -4f * density : 0f)
                             .translationZ(focused && advancedEffects ? 8f * density : 0f)
                             .setDuration(focused ? Motion.REDUCED_MS : 60)
                             .setInterpolator(new DecelerateInterpolator())
                             .start();
                     name.setAlpha(focused ? 1f : restNameAlpha);
-                    // Same place as the full motion's slide ends: the layout's -6dp is only its starting point, and
-                    // left there the name overlaps the zoomed tile.
-                    // Only on focus: snapping it back to -6dp while it fades out would jump it up over the tile.
                     if (focused) name.setTranslationY(density * 4f);
                 } else {
-                    view.animate().scaleX(s).scaleY(s)
-                            .translationY(focused && advancedEffects && !inDock ? -4f * density : 0f)
-                            .translationZ(focused && advancedEffects ? 8f * density : 0f)
-                            .setDuration(advancedEffects ? (focused ? 220 : 170) : (focused ? 260 : 180))
-                            .setInterpolator(focused && !overshoot ? new DecelerateInterpolator(1.5f)
-                                    : new OvershootInterpolator(focused ? (advancedEffects ? 0.7f : 1.6f) : 0f))
-                            .withLayer().start();
+                    cardSpringX.animateToFinalPosition(s);
+                    cardSpringY.animateToFinalPosition(s);
+                    if (!focused) {
+                        view.animate().rotationX(0f).rotationY(0f).translationX(0f)
+                                .translationY(0f).translationZ(0f)
+                                .setDuration(170).start();
+                    } else {
+                        view.animate()
+                                .translationY(advancedEffects && !inDock ? -4f * density : 0f)
+                                .translationZ(advancedEffects ? 8f * density : 0f)
+                                .setDuration(220).start();
+                    }
                     if (advancedEffects) {
                         banner.animate().scaleX(focused ? 1.035f : 1f).scaleY(focused ? 1.035f : 1f)
                                 .setDuration(280).start();
