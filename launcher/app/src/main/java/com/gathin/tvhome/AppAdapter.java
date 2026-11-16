@@ -623,6 +623,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     : GradientDrawable.Orientation.TL_BR, e.backdrop));
         }
         if (e.banner != null) {
+            h.icon.setImageDrawable(null);
             h.banner.setImageDrawable(e.banner);
             h.banner.setVisibility(View.VISIBLE);
             h.icon.setVisibility(View.GONE);

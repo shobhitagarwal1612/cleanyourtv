@@ -18,6 +18,11 @@ public class ClockDream extends DreamService {
     private ChillAudio chillAudio;
 
     @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(LauncherLocale.wrap(base));   // the theme's locale, as ClockActivity
+    }
+
+    @Override
     public void onAttachedToWindow() {
         super.onAttachedToWindow();
         setInteractive(true);

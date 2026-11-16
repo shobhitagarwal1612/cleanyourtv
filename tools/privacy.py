@@ -5,6 +5,7 @@
     privacy.py --write <file>       write the candidates as a debloat list for tools/disable.sh
     privacy.py --write <file> --include-low
                                     also the packages that only matched by name
+    privacy.py --help               this text; needs no TV
 
 `--include-low` is read by the list `--write` writes and by nothing else, so on its own it is refused
 with this usage rather than accepted and ignored: the report prints the name matches either way, and a
@@ -20,18 +21,20 @@ package is listening.
 Disabling is left to `tools/disable.sh`, so the undo path is the one every list already uses: the
 record written before the first change, replayed by `tools/restore.sh`.
 
-Exit status: 0 the audit ran (the report printed, or the list written), 1 it reached the TV and then
-failed (the list could not be written, nothing was identified to write, a file that appeared while
-the audit ran), 2 the run never got as far as the TV: an argument was refused, the `--write` target
-cannot be written, `tools/tv.py` could not be loaded, `TV_HOST` is not set or `TV_PORT` is not a port
-number (tv.py judges those at import and says so in its own words), or the connection failed in one of
-the ways tv.py explains (a refused port, a Wireless debugging port, a handshake that timed out, a TV
-that cannot be reached). Why it stopped goes to stderr, which a wrapper that throws the report on
-stdout away still shows.
+Exit status: 0 the audit ran (the report printed, or the list written), or --help printed this text;
+1 it reached the TV and then failed (the list could not be written, nothing was identified to write, a
+file that appeared while the audit ran), 2 the run never got as far as the TV: an argument was
+refused, the `--write` target cannot be written, `tools/tv.py` could not be loaded, `TV_HOST` is not
+set or `TV_PORT` is not a port number (tv.py judges those at import and says so in its own words), or
+the connection failed in one of the ways tv.py explains (a refused port, a Wireless debugging port, a
+handshake that timed out, a TV that cannot be reached). Why it stopped goes to stderr, which a wrapper
+that throws the report on stdout away still shows.
 """
 import os
 import re
+import shlex
 import sys
+import tempfile
 
 # Names from the TV end up inside commands run by its shell, so nothing that could carry shell syntax
 # goes through. Same rule as tools/recovery.py.
@@ -379,6 +382,7 @@ def list_lines(result, include_low, name):
                          "on the TV. Run the audit again to read them.")
     # The file outlives this run and may be shared (docs/workflows/tv-list.md), so the header uses
     # the placeholder every list uses rather than the TV's address.
+    name = shlex.quote(os.fspath(name))
     lines = [
         "# Privacy audit written by tools/privacy.py.",
         "# Voice, ACR and telemetry candidates this TV answered for. Everything is DISABLED, not",
@@ -417,7 +421,7 @@ def target_problem(path):
         # it through is an IsADirectoryError after the whole audit.
         return (f"{path} is a folder, and --write takes a file name to create, "
                 f"e.g. {os.path.join(path, 'privacy.txt')}.")
-    if os.path.exists(path):
+    if os.path.lexists(path):
         # A second audit of the same TV may legitimately differ, but silently replacing a list the
         # owner is about to apply is how a hand edit disappears.
         return f"{path} already exists; move it aside or choose another name."
@@ -437,8 +441,29 @@ def write_list(path, result, include_low):
     lines = list_lines(result, include_low, os.path.basename(path) if os.path.isabs(path) else path)
     text = "\n".join(lines) + "\n"
     try:
-        with open(path, "w") as f:
-            f.write(text)
+        if os.name == "nt":
+            # A sibling inherits the destination folder's ACL. Windows rename refuses existing
+            # entries, including dangling symlinks which open("x") can follow on Windows.
+            staged = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix=".privacy-",
+                                                 suffix=".tmp", dir=os.path.dirname(path) or ".",
+                                                 delete=False) as f:
+                    staged = f.name
+                    f.write(text)
+                os.rename(staged, path)
+                staged = None
+            finally:
+                if staged is not None:
+                    try:
+                        os.unlink(staged)
+                    except FileNotFoundError:
+                        pass
+        else:
+            # A failed write may leave this newly created file. Do not unlink a path another
+            # process could have replaced after creation.
+            with open(path, "x", encoding="utf-8") as f:
+                f.write(text)
     except OSError as error:
         # The audit is two shell calls for each package it probed, slow on old firmware: a file the
         # folder would not take should not cost the owner a second run of it. What was to be written
@@ -453,13 +478,24 @@ def write_list(path, result, include_low):
         print(f"{result['skipped']} more name matches were not probed (the audit stops at "
               f"{MAX_PROBES}), so the list leaves them out; check them by hand with "
               "`dumpsys package <name>`.")
-    print(f"apply:   TV_HOST={os.environ.get('TV_HOST', '<tv ip>')} tools/disable.sh {path}")
-    print(f"undo:    TV_HOST={os.environ.get('TV_HOST', '<tv ip>')} tools/restore.sh {path}")
+    quoted_path = shlex.quote(os.fspath(path))
+    print(f"apply:   TV_HOST={os.environ.get('TV_HOST', '<tv ip>')} tools/disable.sh {quoted_path}")
+    print(f"undo:    TV_HOST={os.environ.get('TV_HOST', '<tv ip>')} tools/restore.sh {quoted_path}")
     print("read it first: the comments say what each one takes with it.")
 
 
 def main():
     args = sys.argv[1:]
+    # -h/--help is a reader asking for this note, not an argument the run cannot use: the other tools
+    # in tools/ answer it at 0 with the note on stdout (adb-closed.py is the exception, pinned by
+    # tests/test_adb_closed_address_words.py). This one printed the three usage lines on stderr and
+    # returned 2, the status its docstring gives to "the run never got as far as the TV: an argument
+    # was refused", so `tools/privacy.py --help | less` showed nothing and the report's four groups -
+    # the sentence that says the audit never claims a package is listening - were never printed by the
+    # command that asks what the tool does.
+    if args[:1] in (["-h"], ["--help"]):
+        print((__doc__ or "").strip())
+        return 0
     include_low = "--include-low" in args
     args = [a for a in args if a != "--include-low"]
     # --include-low is only read by the list --write makes (list_lines), so `privacy.py --include-low`
